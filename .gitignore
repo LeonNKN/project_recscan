@@ -1,0 +1,4 @@
+# Ignore virtual environment
+flutter_env/
+runs/
+YOLO_Trainer/__pycache__/
