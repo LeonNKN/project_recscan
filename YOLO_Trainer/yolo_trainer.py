@@ -1,5 +1,7 @@
 from ultralytics import YOLO
 import yaml
+import os
+import tempfile  # To create temporary YAML files
 
 class YOLOTrainer:
     def __init__(self, model_path: str, yaml_path: str = None, train_images: str = None, val_images: str = None, class_names: list = None):
@@ -38,32 +40,43 @@ class YOLOTrainer:
     def prepare_data(self):
         """
         Prepares the dataset configuration for YOLO training.
-        Returns a dictionary containing dataset paths and class metadata.
+        Returns the path to the temporary YAML file containing dataset paths and class metadata.
         """
-        return {
+        data_config = {
             'train': self.train_images,
             'val': self.val_images,
             'names': self.class_names,
             'nc': len(self.class_names)
         }
 
+        # Save the configuration to a temporary YAML file
+        temp_yaml_path = tempfile.NamedTemporaryFile(delete=False, suffix=".yaml").name
+        with open(temp_yaml_path, 'w') as file:
+            yaml.dump(data_config, file)
+
+        print(f"Temporary dataset YAML saved to: {temp_yaml_path}")
+        return temp_yaml_path
+
     def train(self, data_yaml_path=None, epochs: int = 50, img_size: int = 640, batch_size: int = 16):
         """
         Train the YOLO model.
 
         Args:
+            data_yaml_path (str, optional): Path to the dataset YAML file. Default is None.
             epochs (int): Number of training epochs. Default is 50.
             img_size (int): Image size for training. Default is 640.
             batch_size (int): Batch size for training. Default is 16.
         """
-        data_config = self.prepare_data()
-        print(f"Starting training with the following configuration: {data_config}")
-        
+        if not data_yaml_path:
+            # Generate dataset YAML dynamically if not provided
+            data_yaml_path = self.prepare_data()
+
+        print(f"Starting training with dataset YAML: {data_yaml_path}")
         self.model.train(
-                data=data_yaml_path,
-                epochs=epochs,
-                imgsz=img_size,
-                batch=batch_size
+            data=data_yaml_path,
+            epochs=epochs,
+            imgsz=img_size,
+            batch=batch_size
         )
         print("Training completed!")
 
@@ -85,12 +98,10 @@ class YOLOTrainer:
             save_results (bool): Whether to save the inference results. Default is False.
         """
         print(f"Running inference on image: {image_path}")
-        results = self.model(image_path)
-        results.show()
+        results = self.model.predict(source=image_path, save=save_results)
 
         if save_results:
-            results.save()
-            print(f"Results saved to {results.files}")
+            print(f"Results saved to: {results.files}")
 
         return results
 

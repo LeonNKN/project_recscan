@@ -9,3 +9,12 @@ Commit Rules:
 | Feature | For any changes related to Changes |
 | BugFix | For any Bug Fix Changes |
 | Other | Other Changes |
+
+-----------------------------
+
+How To Start Train Model
+1) python -m venv flutter_env
+    - Creating Virtual ENV with the name "flutter_env"
+2) cd YOLO_Trainer
+3) pip install -r requirements.txt
+4) DONE
