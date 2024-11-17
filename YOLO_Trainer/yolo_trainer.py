@@ -2,6 +2,8 @@ from ultralytics import YOLO
 import yaml
 import os
 import tempfile  # To create temporary YAML files
+import matplotlib.pyplot as plt
+from PIL import Image, ImageEnhance
 
 class YOLOTrainer:
     def __init__(self, model_path: str, yaml_path: str = None, train_images: str = None, val_images: str = None, class_names: list = None):
@@ -89,27 +91,45 @@ class YOLOTrainer:
         print(f"Evaluation results:\n{results}")
         return results
 
-    def predict(self, image_path, save_results: bool = False):
+    def predict(self, image_path, save_results: bool = False, conf: float = 0.1):
         """
-        Run inference on a given image.
+        Run inference on a given image with preprocessing.
 
         Args:
-            image_path (str): Path to the input image for single image prediction.
-            image_path [List] : Path to the multiple input image for single image prediction.
+            image_path (str): Path to the input image.
             save_results (bool): Whether to save the inference results. Default is False.
+            conf (float): Confidence threshold for detections. Default is 0.1.
 
+        Returns:
+            annotated_images (List[np.ndarray]): List of images with bounding boxes drawn.
         """
-        # Perform object detection on an image
-        results = self.model(image_path)
+        print(f"Running inference on: {image_path}")
 
-        # Access and log paths to saved results
+        # Preprocess the image
+        img = Image.open(image_path).convert("L")  # Convert to grayscale
+        enhancer = ImageEnhance.Contrast(img)
+        img = enhancer.enhance(2)  # Enhance contrast
+        preprocessed_path = "preprocessed_receipt.png"
+        img.save(preprocessed_path)
+
+        # Perform object detection
+        results = self.model.predict(source=preprocessed_path, conf=conf, imgsz=640)
+
+        annotated_images = []
+
+        # Process results
+        for result in results:
+            print(result.boxes)  # Debug: Print detection boxes
+            annotated_image = result.plot()  # Generate annotated image
+            annotated_images.append(annotated_image)
+
         if save_results:
             # Save annotated images
-            saved_dir = results[0].save()  # Save annotations
+            saved_dir = results[0].save()
             print(f"Annotated results saved to: {saved_dir}")
 
-        # Return the results object for further processing
-        return results
+        # Return the annotated image(s)
+        return annotated_images
 
     def export_model(self, export_format: str = 'onnx'):
         """
