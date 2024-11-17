@@ -1,5 +1,0 @@
-train: C:/Users/USER/Desktop/YOLO/archive/SROIE2019/train/images
-val: C:/Users/USER/Desktop/YOLO/archive/SROIE2019/val/images
-
-nc: 4  # Number of classes (e.g., company, date, address, total)
-names: ['company', 'date', 'address', 'total']

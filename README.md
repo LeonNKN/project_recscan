@@ -21,7 +21,9 @@ How To Start Train Model
 
 
 ----------------------
-Download the Training Package. 
-[LINK_HERE](https://www.kaggle.com/datasets/urbikn/sroie-datasetv2?resource=download)
+Model Training
+1. Dataset Preparation
+- Download the Data Package before training Model. 
+[LINK_HERE](https://universe.roboflow.com/mahb-test/mahb-receipt)
 
 ---------------------
