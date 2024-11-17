@@ -1,6 +1,5 @@
-train: C:/Users/USER/Desktop/YOLO/archive/SROIE2019/train/img  # Path to your training images
-val: C:/Users/USER/Desktop/YOLO/archive/SROIE2019/test/img  # Path to your testing images
+train: C:/Users/USER/Desktop/YOLO/archive/SROIE2019/train/images
+val: C:/Users/USER/Desktop/YOLO/archive/SROIE2019/val/images
 
-
-nc: 4  # Number of classes (e.g., total, date, vendor, address)
-names: ['company', 'date', 'address', 'total']  # List of class names
+nc: 4  # Number of classes (e.g., company, date, address, total)
+names: ['company', 'date', 'address', 'total']

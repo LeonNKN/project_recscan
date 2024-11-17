@@ -100,9 +100,13 @@ class YOLOTrainer:
         print(f"Running inference on image: {image_path}")
         results = self.model.predict(source=image_path, save=save_results)
 
+        # Access and log paths to saved results
         if save_results:
-            print(f"Results saved to: {results.files}")
+            # Save annotated images
+            saved_dir = results[0].save()  # Save annotations
+            print(f"Annotated results saved to: {saved_dir}")
 
+        # Return the results object for further processing
         return results
 
     def export_model(self, export_format: str = 'onnx'):

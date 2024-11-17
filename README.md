@@ -18,3 +18,10 @@ How To Start Train Model
 2) cd YOLO_Trainer
 3) pip install -r requirements.txt
 4) DONE
+
+
+----------------------
+Download the Training Package. 
+[LINK_HERE](https://www.kaggle.com/datasets/urbikn/sroie-datasetv2?resource=download)
+
+---------------------
