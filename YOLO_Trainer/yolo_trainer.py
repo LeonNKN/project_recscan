@@ -89,16 +89,18 @@ class YOLOTrainer:
         print(f"Evaluation results:\n{results}")
         return results
 
-    def predict(self, image_path: str, save_results: bool = False):
+    def predict(self, image_path, save_results: bool = False):
         """
         Run inference on a given image.
 
         Args:
-            image_path (str): Path to the input image.
+            image_path (str): Path to the input image for single image prediction.
+            image_path [List] : Path to the multiple input image for single image prediction.
             save_results (bool): Whether to save the inference results. Default is False.
+
         """
-        print(f"Running inference on image: {image_path}")
-        results = self.model.predict(source=image_path, save=save_results)
+        # Perform object detection on an image
+        results = self.model(image_path)
 
         # Access and log paths to saved results
         if save_results:
