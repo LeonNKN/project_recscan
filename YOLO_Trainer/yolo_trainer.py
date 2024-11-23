@@ -91,7 +91,7 @@ class YOLOTrainer:
         print(f"Evaluation results:\n{results}")
         return results
 
-    def predict(self, image_path, save_results: bool = False, conf: float = 0.1):
+    def predict(self, image_path, save_crop: bool = False, save_results: bool = False, conf: float = 0.1):
         """
         Run inference on a given image with preprocessing.
 
@@ -113,7 +113,7 @@ class YOLOTrainer:
         img.save(preprocessed_path)
 
         # Perform object detection
-        results = self.model.predict(source=preprocessed_path, conf=conf, imgsz=640)
+        results = self.model.predict(source=preprocessed_path, conf=conf, imgsz=640,save_crop=save_crop)
 
         annotated_images = []
 
