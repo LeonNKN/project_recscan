@@ -1,6 +1,6 @@
-train: ../train/images
-val: ../valid/images
-test: ../test/images
+train: ../dataset/receipt_data/train/images
+val: ../dataset/receipt_data/valid/images
+test: ../dataset/receipt_data/test/images
 
 nc: 8
 names: ['Address', 'Date', 'Item', 'OrderId', 'Subtotal', 'Tax', 'Title', 'TotalPrice']

@@ -1,0 +1,1 @@
+Location to put entire receipt model data for training, validation and testing
