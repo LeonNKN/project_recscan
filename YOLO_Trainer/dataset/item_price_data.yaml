@@ -1,0 +1,6 @@
+train: ../dataset/item_data/train/images
+val: ../dataset/item_data/valid/images
+test: ../dataset/item_data/test/images
+
+nc: 5
+names: ['Item', 'Price', 'Quantitiy', 'Sub Price', 'Total Price']

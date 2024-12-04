@@ -1,0 +1,1 @@
+Location to put itemized receipt model data for training, validation and testing
