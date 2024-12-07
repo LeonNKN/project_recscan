@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'pages/home_page.dart';
 import 'pages/scan_page.dart';
 import 'pages/profile_page.dart';
-import 'widgets/custom_nav_bar.dart';
+import 'widgets/custom_nav_bar.dart'; // Import updated nav bar
 
 void main() {
   runApp(MyApp());
@@ -28,9 +28,10 @@ class _MainPageState extends State<MainPage> {
   int _selectedIndex = 0;
 
   final List<Widget> _pages = [
-    HomePage(),
-    ScanPage(),
-    ProfilePage(),
+    HomePage(), // Page for Home
+    ScanPage(), // Page for First Floating Button
+    ScanPage(), // Page for Second Floating Button
+    ProfilePage(), // Page for Profile
   ];
 
   void _onItemTapped(int index) {
@@ -43,7 +44,7 @@ class _MainPageState extends State<MainPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       body: _pages[_selectedIndex],
-      bottomNavigationBar: CustomNavBar(
+      bottomNavigationBar: CustomNavBarWithTwoFABs(
         selectedIndex: _selectedIndex,
         onItemTapped: _onItemTapped,
       ),
