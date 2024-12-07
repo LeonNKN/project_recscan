@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'dart:io';
-import 'package:tflite_flutter/tflite_flutter.dart'; // TensorFlow Lite package
-import 'package:image/image.dart' as img; // For preprocessing
+import 'package:tflite_flutter/tflite_flutter.dart';
+import 'package:image/image.dart' as img;
 import 'dart:typed_data';
 
 class ScanPage extends StatefulWidget {
@@ -13,17 +13,12 @@ class ScanPage extends StatefulWidget {
 class _ScanPageState extends State<ScanPage> {
   final List<File> _imageFiles = [];
   List<Map<String, dynamic>> _detections = [];
-  String _statusMessage = "Select images to start processing.";
+  Uint8List? _inputImageMemory;
+  String _statusMessage = "Select an image to start processing.";
   final ImagePicker _picker = ImagePicker();
   late Interpreter _interpreter;
 
-  // Class labels based on your model's metadata
-  final List<String> classNames = [
-    "Item",
-    "Price",
-    "Quantity",
-    "Sub Price",
-  ];
+  final List<String> classNames = ["Item", "Price", "Quantity", "Sub Price"];
 
   @override
   void initState() {
@@ -45,19 +40,22 @@ class _ScanPageState extends State<ScanPage> {
     }
   }
 
-  /// Allow user to pick multiple images
-  Future<void> _pickImages() async {
+  /// Allow user to pick an image
+  Future<void> _pickImage() async {
     try {
-      final List<XFile>? pickedFiles = await _picker.pickMultiImage();
-      if (pickedFiles != null) {
+      final XFile? pickedFile =
+          await _picker.pickImage(source: ImageSource.gallery);
+      if (pickedFile != null) {
         setState(() {
-          _imageFiles.addAll(pickedFiles.map((file) => File(file.path)));
-          _statusMessage = "${pickedFiles.length} images selected.";
+          _imageFiles.clear();
+          _imageFiles.add(File(pickedFile.path));
+          _statusMessage = "Image selected.";
         });
+        _processImages();
       }
     } catch (e) {
       setState(() {
-        _statusMessage = "Error picking images: $e";
+        _statusMessage = "Error picking image: $e";
       });
     }
   }
@@ -66,24 +64,19 @@ class _ScanPageState extends State<ScanPage> {
   Future<void> _processImages() async {
     if (_imageFiles.isEmpty) {
       setState(() {
-        _statusMessage = "Please select images first.";
+        _statusMessage = "Please select an image first.";
       });
       return;
     }
 
     setState(() {
-      _statusMessage = "Processing images...";
+      _statusMessage = "Processing image...";
     });
 
     try {
-      final List<Map<String, dynamic>> allDetections = [];
-      for (final file in _imageFiles) {
-        final detections = await _runYOLOModel(file);
-        allDetections.addAll(detections);
-      }
-
+      final detections = await _runYOLOModel(_imageFiles.first);
       setState(() {
-        _detections = allDetections;
+        _detections = detections;
         _statusMessage = "Processing complete.";
       });
     } catch (e) {
@@ -93,71 +86,106 @@ class _ScanPageState extends State<ScanPage> {
     }
   }
 
-  /// Run YOLO inference on an image
+  /// Run YOLO inference and draw bounding boxes
   Future<List<Map<String, dynamic>>> _runYOLOModel(File imageFile) async {
-    // Load and preprocess the image
-    final inputImage = img.decodeImage(imageFile.readAsBytesSync());
-    if (inputImage == null) throw Exception("Failed to decode image.");
+    final originalImage = img.decodeImage(imageFile.readAsBytesSync());
+    if (originalImage == null) throw Exception("Failed to decode image.");
 
-    // Convert to grayscale
-    final grayscaleImage = img.grayscale(inputImage);
+    // Resize the image to the YOLO model input size
+    final resizedImage = img.copyResize(originalImage, width: 640, height: 640);
 
-    // Enhance contrast
-    final enhancedImage = img.adjustColor(grayscaleImage, contrast: 2.0);
-
-    // Resize to model input size
-    final resizedImage = img.copyResize(enhancedImage, width: 640, height: 640);
-
-    // Normalize and convert to 3-channel RGB
+    // Prepare input tensor
     final Float32List input = Float32List(640 * 640 * 3);
     int pixelIndex = 0;
 
+    // Extract normalized pixel values
     for (int y = 0; y < 640; y++) {
       for (int x = 0; x < 640; x++) {
         final pixel = resizedImage.getPixel(x, y);
-        final normValue = img.getRed(pixel) / 255.0; // Normalized grayscale
-        input[pixelIndex++] = normValue; // Red channel
-        input[pixelIndex++] = normValue; // Green channel
-        input[pixelIndex++] = normValue; // Blue channel
+        input[pixelIndex++] = img.getRed(pixel) / 255.0;
+        input[pixelIndex++] = img.getGreen(pixel) / 255.0;
+        input[pixelIndex++] = img.getBlue(pixel) / 255.0;
       }
     }
 
-    // Prepare output buffer
+    // Prepare output tensor buffer
     final outputShape = _interpreter.getOutputTensor(0).shape;
-    final outputBuffer = List.filled(outputShape.reduce((a, b) => a * b), 0.0)
-        .reshape(outputShape);
+    final outputBuffer = List.filled(
+      outputShape.reduce((a, b) => a * b),
+      0.0,
+    ).reshape(outputShape);
 
     // Run inference
     _interpreter.run(input.reshape([1, 640, 640, 3]), outputBuffer);
 
-    // Postprocess results
-    return _parseYOLOOutput(outputBuffer);
+    // Draw bounding boxes
+    return _drawBoundingBoxes(outputBuffer, originalImage);
   }
 
-  /// Parse YOLO model output into bounding boxes and labels
-  List<Map<String, dynamic>> _parseYOLOOutput(List<dynamic> output) {
-    final List<Map<String, dynamic>> detections = [];
+  /// Draw bounding box manually by drawing multiple rectangles for thickness
+  void _drawBoundingBox(
+      img.Image image, int x1, int y1, int x2, int y2, int thickness) {
+    for (int i = 0; i < thickness; i++) {
+      img.drawRect(
+        image,
+        x1 - i,
+        y1 - i,
+        x2 + i,
+        y2 + i,
+        img.getColor(255, 0, 0), // Red color
+      );
+    }
+  }
+
+  /// Draw bounding boxes on the input image
+  List<Map<String, dynamic>> _drawBoundingBoxes(
+      List<dynamic> output, img.Image originalImage) {
+    final List<Map<String, dynamic>> detectedRegions = [];
 
     for (final detection in output[0]) {
       final confidence = detection[4];
-      _statusMessage = "Checking.";
-      if (confidence > 0.05) {
-        // Confidence threshold
+      if (confidence > 0.1) {
+        // Adjust confidence threshold
         final classIndex = detection[5].toInt();
         final label = classNames[classIndex];
 
-        detections.add({
-          "x": detection[0] * 640, // Scale to original image size
-          "y": detection[1] * 640,
-          "width": detection[2] * 640,
-          "height": detection[3] * 640,
-          "confidence": confidence,
-          "label": label,
-        });
+        // Calculate bounding box
+        final xCenter = detection[0] * originalImage.width;
+        final yCenter = detection[1] * originalImage.height;
+        final width = detection[2] * originalImage.width;
+        final height = detection[3] * originalImage.height;
+
+        final x1 = (xCenter - width / 2).clamp(0, originalImage.width).toInt();
+        final y1 =
+            (yCenter - height / 2).clamp(0, originalImage.height).toInt();
+        final x2 = (xCenter + width / 2).clamp(0, originalImage.width).toInt();
+        final y2 =
+            (yCenter + height / 2).clamp(0, originalImage.height).toInt();
+
+        debugPrint("✅ $label : $x1, $y1, $x2, $y2");
+
+        // Ensure valid bounding box
+        if (x2 > x1 && y2 > y1) {
+          _drawBoundingBox(originalImage, x1, y1, x2, y2, 100); // Thickness 4
+
+          detectedRegions.add({
+            "label": label,
+            "confidence": confidence,
+            "boundingBox": [x1, y1, x2, y2],
+          });
+
+          debugPrint(
+              "✅ Detected: $label, Confidence: ${(confidence * 100).toStringAsFixed(2)}%");
+        }
       }
     }
 
-    return detections;
+    setState(() {
+      _inputImageMemory = Uint8List.fromList(img.encodeJpg(originalImage));
+    });
+
+    debugPrint("📊 Total Detections Found: ${detectedRegions.length}");
+    return detectedRegions;
   }
 
   @override
@@ -176,12 +204,8 @@ class _ScanPageState extends State<ScanPage> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             ElevatedButton(
-              onPressed: _pickImages,
-              child: const Text("Select Images"),
-            ),
-            ElevatedButton(
-              onPressed: _processImages,
-              child: const Text("Run YOLO Model"),
+              onPressed: _pickImage,
+              child: const Text("Select Image"),
             ),
             const SizedBox(height: 16),
             Text(
@@ -189,16 +213,30 @@ class _ScanPageState extends State<ScanPage> {
               style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 16),
+            if (_inputImageMemory != null)
+              Image.memory(
+                _inputImageMemory!,
+                height: 400,
+                fit: BoxFit.contain,
+              ),
+            const Divider(),
             if (_detections.isNotEmpty)
               Expanded(
                 child: ListView.builder(
                   itemCount: _detections.length,
                   itemBuilder: (context, index) {
                     final detection = _detections[index];
-                    return ListTile(
-                      title: Text("Detected: ${detection['label']}"),
-                      subtitle: Text(
-                          "Confidence: ${(detection['confidence'] * 100).toStringAsFixed(2)}%"),
+                    return Column(
+                      children: [
+                        Text(
+                          "Detected: ${detection['label']}, Confidence: ${(detection['confidence'] * 100).toStringAsFixed(2)}%",
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const Divider(),
+                      ],
                     );
                   },
                 ),
