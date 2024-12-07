@@ -98,16 +98,27 @@ class _ScanPageState extends State<ScanPage> {
     // Load and preprocess the image
     final inputImage = img.decodeImage(imageFile.readAsBytesSync());
     if (inputImage == null) throw Exception("Failed to decode image.");
-    final resizedImage = img.copyResize(inputImage, width: 640, height: 640);
-    final Float32List input = Float32List(640 * 640 * 3);
 
+    // Convert to grayscale
+    final grayscaleImage = img.grayscale(inputImage);
+
+    // Enhance contrast
+    final enhancedImage = img.adjustColor(grayscaleImage, contrast: 2.0);
+
+    // Resize to model input size
+    final resizedImage = img.copyResize(enhancedImage, width: 640, height: 640);
+
+    // Normalize and convert to 3-channel RGB
+    final Float32List input = Float32List(640 * 640 * 3);
     int pixelIndex = 0;
+
     for (int y = 0; y < 640; y++) {
       for (int x = 0; x < 640; x++) {
         final pixel = resizedImage.getPixel(x, y);
-        input[pixelIndex++] = img.getRed(pixel) / 255.0;
-        input[pixelIndex++] = img.getGreen(pixel) / 255.0;
-        input[pixelIndex++] = img.getBlue(pixel) / 255.0;
+        final normValue = img.getRed(pixel) / 255.0; // Normalized grayscale
+        input[pixelIndex++] = normValue; // Red channel
+        input[pixelIndex++] = normValue; // Green channel
+        input[pixelIndex++] = normValue; // Blue channel
       }
     }
 
@@ -129,7 +140,8 @@ class _ScanPageState extends State<ScanPage> {
 
     for (final detection in output[0]) {
       final confidence = detection[4];
-      if (confidence > 0.5) {
+      _statusMessage = "Checking.";
+      if (confidence > 0.05) {
         // Confidence threshold
         final classIndex = detection[5].toInt();
         final label = classNames[classIndex];
