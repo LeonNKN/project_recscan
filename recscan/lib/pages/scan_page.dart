@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'dart:io';
-import 'package:tflite_flutter/tflite_flutter.dart';
+import 'package:ultralytics_yolo/ultralytics_yolo.dart';
+import 'package:ultralytics_yolo/yolo_model.dart';
 import 'package:image/image.dart' as img;
 import 'dart:typed_data';
 
@@ -12,31 +13,60 @@ class ScanPage extends StatefulWidget {
 
 class _ScanPageState extends State<ScanPage> {
   final List<File> _imageFiles = [];
-  List<Map<String, dynamic>> _detections = [];
   Uint8List? _inputImageMemory;
   String _statusMessage = "Select an image to start processing.";
   final ImagePicker _picker = ImagePicker();
-  late Interpreter _interpreter;
-
+  List<ClassificationResult?>? _detections;
   final List<String> classNames = ["Item", "Price", "Quantity", "Sub Price"];
+  ImageClassifier? imageClassifier; // Declare at the class level
 
   @override
   void initState() {
     super.initState();
-    _loadModel();
+    // Load the model and handle it asynchronously
+    _initializeModel();
   }
 
-  /// Load the YOLO model
-  Future<void> _loadModel() async {
+  void _initializeModel() async {
     try {
-      _interpreter = await Interpreter.fromAsset('assets/best_float32.tflite');
+      final imageClassifier = await _loadModel();
+
+      // Perform any additional setup with the objectDetector if necessary
+      setState(() {
+        _statusMessage = "Model initialized successfully.";
+        // Store objectDetector if you need it elsewhere in the widget
+      });
+    } catch (e) {
+      setState(() {
+        _statusMessage = "Failed to initialize model: $e";
+      });
+    }
+  }
+
+  Future<ImageClassifier> _loadModel() async {
+    try {
+      final model = LocalYoloModel(
+        id: '',
+        task: Task.classify,
+        format: Format.tflite,
+        modelPath: 'assets/best_float32.tflite',
+        metadataPath: 'assets/best_float32.tflite',
+      );
+
+      final imageClassifier = ImageClassifier(model: model);
+
       setState(() {
         _statusMessage = "Model loaded successfully.";
       });
+
+      return imageClassifier; // Return the ObjectDetector instance here
     } catch (e) {
       setState(() {
         _statusMessage = "Error loading model: $e";
       });
+
+      // You might want to throw the error to propagate it if necessary
+      throw Exception("Error loading model: $e");
     }
   }
 
@@ -74,9 +104,9 @@ class _ScanPageState extends State<ScanPage> {
     });
 
     try {
-      final detections = await _runYOLOModel(_imageFiles.first);
+      final results = await _runYOLOModel(_imageFiles.first);
       setState(() {
-        _detections = detections;
+        _detections = results; // Store results directly
         _statusMessage = "Processing complete.";
       });
     } catch (e) {
@@ -86,40 +116,22 @@ class _ScanPageState extends State<ScanPage> {
     }
   }
 
-  /// Run YOLO inference and draw bounding boxes
-  Future<List<Map<String, dynamic>>> _runYOLOModel(File imageFile) async {
-    final originalImage = img.decodeImage(imageFile.readAsBytesSync());
-    if (originalImage == null) throw Exception("Failed to decode image.");
-
-    // Resize the image to the YOLO model input size
-    final resizedImage = img.copyResize(originalImage, width: 640, height: 640);
-
-    // Prepare input tensor
-    final Float32List input = Float32List(640 * 640 * 3);
-    int pixelIndex = 0;
-
-    // Extract normalized pixel values
-    for (int y = 0; y < 640; y++) {
-      for (int x = 0; x < 640; x++) {
-        final pixel = resizedImage.getPixel(x, y);
-        input[pixelIndex++] = img.getRed(pixel) / 255.0;
-        input[pixelIndex++] = img.getGreen(pixel) / 255.0;
-        input[pixelIndex++] = img.getBlue(pixel) / 255.0;
-      }
+  Future<List<ClassificationResult>> _runYOLOModel(File imageFile) async {
+    if (imageClassifier == null) {
+      print('Error: imageClassifier is not initialized.');
+      return []; // Return an empty list as a fallback
     }
 
-    // Prepare output tensor buffer
-    final outputShape = _interpreter.getOutputTensor(0).shape;
-    final outputBuffer = List.filled(
-      outputShape.reduce((a, b) => a * b),
-      0.0,
-    ).reshape(outputShape);
+    try {
+      final results =
+          await imageClassifier!.classify(imagePath: imageFile.path);
 
-    // Run inference
-    _interpreter.run(input.reshape([1, 640, 640, 3]), outputBuffer);
-
-    // Draw bounding boxes
-    return _drawBoundingBoxes(outputBuffer, originalImage);
+      // Ensure the list is non-null and contains only non-null elements
+      return results?.whereType<ClassificationResult>().toList() ?? [];
+    } catch (e) {
+      print('Error running YOLO model: $e');
+      return []; // Return an empty list in case of an error
+    }
   }
 
   /// Draw bounding box manually by drawing multiple rectangles for thickness
@@ -148,13 +160,11 @@ class _ScanPageState extends State<ScanPage> {
         // Adjust confidence threshold
         final classIndex = detection[5].toInt();
         final label = classNames[classIndex];
-
         // Calculate bounding box
         final xCenter = detection[0] * originalImage.width;
         final yCenter = detection[1] * originalImage.height;
         final width = detection[2] * originalImage.width;
         final height = detection[3] * originalImage.height;
-
         final x1 = (xCenter - width / 2).clamp(0, originalImage.width).toInt();
         final y1 =
             (yCenter - height / 2).clamp(0, originalImage.height).toInt();
@@ -190,7 +200,6 @@ class _ScanPageState extends State<ScanPage> {
 
   @override
   void dispose() {
-    _interpreter.close();
     super.dispose();
   }
 
@@ -220,16 +229,19 @@ class _ScanPageState extends State<ScanPage> {
                 fit: BoxFit.contain,
               ),
             const Divider(),
-            if (_detections.isNotEmpty)
+            if (_detections != null && _detections!.isNotEmpty)
               Expanded(
                 child: ListView.builder(
-                  itemCount: _detections.length,
+                  itemCount: _detections!.length,
                   itemBuilder: (context, index) {
-                    final detection = _detections[index];
+                    final detection = _detections![index];
+                    if (detection == null) {
+                      return const Text("No detection available.");
+                    }
                     return Column(
                       children: [
                         Text(
-                          "Detected: ${detection['label']}, Confidence: ${(detection['confidence'] * 100).toStringAsFixed(2)}%",
+                          "Detected: ${detection.label}, Confidence: ${(detection.confidence * 100).toStringAsFixed(2)}%",
                           style: const TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.bold,
