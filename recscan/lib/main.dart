@@ -53,8 +53,7 @@ class _MainPageState extends State<MainPage> {
 
     if (!granted) {
       // Optional: Guide user to settings if permissions are permanently denied
-      if (await Permission.camera.isPermanentlyDenied ||
-          await Permission.storage.isPermanentlyDenied) {
+      if (await Permission.camera.isPermanentlyDenied) {
         _showPermissionDialog();
       }
     }
@@ -93,15 +92,11 @@ class _MainPageState extends State<MainPage> {
     var cameraStatus = await Permission.camera.status;
     if (!cameraStatus.isGranted) permissions.add(Permission.camera);
 
-    var storageStatus = await Permission.storage.status;
-    if (!storageStatus.isGranted) permissions.add(Permission.storage);
-
     if (permissions.isEmpty) {
       return true;
     } else {
       Map<Permission, PermissionStatus> statuses = await permissions.request();
-      return statuses[Permission.camera] == PermissionStatus.granted &&
-          statuses[Permission.storage] == PermissionStatus.granted;
+      return statuses[Permission.camera] == PermissionStatus.granted;
     }
   }
 

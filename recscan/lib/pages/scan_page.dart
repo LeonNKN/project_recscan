@@ -2,11 +2,7 @@ import 'dart:io' as io;
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:permission_handler/permission_handler.dart';
-import 'package:path_provider/path_provider.dart';
-import 'package:path/path.dart';
-import 'package:flutter/services.dart';
-import 'package:ultralytics_yolo/ultralytics_yolo.dart';
-import 'package:ultralytics_yolo/yolo_model.dart';
+import 'package:tflite_v2/tflite_v2.dart';
 import 'package:image/image.dart' as img;
 import 'dart:typed_data';
 
@@ -19,15 +15,14 @@ class _ScanPageState extends State<ScanPage> {
   final ImagePicker _picker = ImagePicker();
   Uint8List? _inputImageMemory;
   String _statusMessage = "Select an image to start processing.";
-  List<ClassificationResult>? _detections;
-  ImageClassifier? imageClassifier;
+  List<Map<String, dynamic>>? _detections;
 
   @override
   void initState() {
     super.initState();
     _checkPermissions().then((permissionsGranted) {
       if (permissionsGranted) {
-        _initializeModel();
+        _loadModel();
       } else {
         setState(() {
           _statusMessage = "Permission denied. Cannot proceed.";
@@ -36,42 +31,20 @@ class _ScanPageState extends State<ScanPage> {
     });
   }
 
-  Future<void> _initializeModel() async {
+  Future<void> _loadModel() async {
     try {
-      final modelPath =
-          await _copyAssetToAppSupportDir('assets/best_float32.tflite');
-      final metadataPath =
-          await _copyAssetToAppSupportDir('assets/best_metadata.json');
-      final model = LocalYoloModel(
-        id: '',
-        task: Task.classify,
-        format: Format.tflite,
-        modelPath: modelPath,
-        metadataPath: metadataPath,
+      await Tflite.loadModel(
+        model: "assets/best_float32.tflite",
+        labels: "assets/labels.txt",
       );
-
-      imageClassifier = ImageClassifier(model: model);
       setState(() {
-        _statusMessage = "Model initialized successfully.";
+        _statusMessage = "Model loaded successfully.";
       });
     } catch (e) {
       setState(() {
-        _statusMessage = "Failed to initialize model: $e";
+        _statusMessage = "Failed to load model: $e";
       });
     }
-  }
-
-  Future<String> _copyAssetToAppSupportDir(String assetPath) async {
-    final directory = await getApplicationSupportDirectory();
-    final path = '${directory.path}/$assetPath';
-    await io.Directory(dirname(path)).create(recursive: true);
-    final file = io.File(path);
-    if (!await file.exists()) {
-      final byteData = await rootBundle.load(assetPath);
-      await file.writeAsBytes(byteData.buffer
-          .asUint8List(byteData.offsetInBytes, byteData.lengthInBytes));
-    }
-    return file.path;
   }
 
   Future<void> _pickImage() async {
@@ -92,28 +65,31 @@ class _ScanPageState extends State<ScanPage> {
     }
   }
 
-  Future<void> _processImage(io.File imageFile) async {
-    if (imageClassifier == null) {
-      setState(() {
-        _statusMessage = "Model is not initialized.";
-      });
-      return;
-    }
+  Uint8List imageToByteListFloat32(
+      img.Image image, int inputSize, double mean, double std) {
+    final convertedBytes = Float32List(inputSize * inputSize * 3);
+    final buffer = Float32List.view(convertedBytes.buffer);
 
+    int pixelIndex = 0;
+    for (int y = 0; y < inputSize; y++) {
+      for (int x = 0; x < inputSize; x++) {
+        final pixel = image.getPixel(x, y);
+        buffer[pixelIndex++] = ((pixel >> 16) & 0xFF) / std - mean; // R
+        buffer[pixelIndex++] = ((pixel >> 8) & 0xFF) / std - mean; // G
+        buffer[pixelIndex++] = (pixel & 0xFF) / std - mean; // B
+      }
+    }
+    return convertedBytes.buffer.asUint8List();
+  }
+
+  Future<void> _processImage(io.File imageFile) async {
     setState(() {
       _statusMessage = "Processing image...";
     });
 
     try {
-      final results =
-          await imageClassifier!.classify(imagePath: imageFile.path);
-
-      // Ensure the results list is non-null and filter out null items
-      final nonNullResults =
-          (results ?? []).whereType<ClassificationResult>().toList();
-
+      // Decode the original image
       final originalImage = img.decodeImage(await imageFile.readAsBytes());
-
       if (originalImage == null) {
         setState(() {
           _statusMessage = "Failed to decode image.";
@@ -121,66 +97,94 @@ class _ScanPageState extends State<ScanPage> {
         return;
       }
 
-      final detectedRegions = _drawBoundingBoxes(nonNullResults, originalImage);
+      // Resize image to 640x640
+      final resizedImage =
+          img.copyResize(originalImage, width: 640, height: 640);
+
+      // Convert image to tensor
+      final binaryData = imageToByteListFloat32(resizedImage, 640, 0.0, 255.0);
+
+      // Perform object detection
+      final recognitions = await Tflite.detectObjectOnBinary(
+        binary: binaryData,
+        model: "YOLO",
+        threshold: 0.3,
+        numResultsPerClass: 2,
+        anchors: [
+          0.573,
+          0.678,
+          1.874,
+          2.063,
+          3.338,
+          5.474,
+          7.883,
+          3.528,
+          9.771,
+          9.168
+        ],
+        blockSize: 32,
+        numBoxesPerBlock: 5,
+        asynch: true,
+      );
+
+      // Check if recognitions are valid
+      if (recognitions == null || recognitions.isEmpty) {
+        setState(() {
+          _statusMessage = "No objects detected.";
+        });
+        return;
+      }
+
+      // Annotate detections on the original image
+      final annotatedImage = _drawBoundingBoxes(recognitions, originalImage);
+
       setState(() {
-        _detections = detectedRegions;
-        _inputImageMemory = Uint8List.fromList(img.encodeJpg(originalImage));
-        _statusMessage = "Processing complete.";
+        _detections = recognitions
+            .map((r) => {
+                  "detectedClass": r["detectedClass"],
+                  "confidenceInClass": r["confidenceInClass"],
+                  "rect": r["rect"],
+                })
+            .toList();
+        _inputImageMemory = Uint8List.fromList(img.encodeJpg(annotatedImage));
+        _statusMessage = "Detection complete.";
       });
     } catch (e) {
       setState(() {
-        _statusMessage = "Error during processing: $e";
+        _statusMessage = "Error during detection: $e";
       });
     }
   }
 
-  List<ClassificationResult> _drawBoundingBoxes(
-      List<ClassificationResult> results, img.Image originalImage) {
-    final detectedRegions = <ClassificationResult>[];
-
+  img.Image _drawBoundingBoxes(List<dynamic> results, img.Image originalImage) {
     for (final detection in results) {
-      final confidence = detection.confidence;
-      if (confidence > 0.1) {
-        detectedRegions.add(detection);
+      final label = detection["detectedClass"];
+      final confidence = detection["confidenceInClass"];
+      final rect = detection["rect"];
 
-        // Placeholder bounding box logic
-        final boundingBox = [10, 20, 100, 200]; // Replace with real values
-        _drawBoundingBox(originalImage, boundingBox[0], boundingBox[1],
-            boundingBox[2], boundingBox[3], 4);
-      }
+      final x1 = (rect["x"] * originalImage.width).toInt();
+      final y1 = (rect["y"] * originalImage.height).toInt();
+      final x2 = (rect["x"] + rect["w"]) * originalImage.width.toInt();
+      final y2 = (rect["y"] + rect["h"]) * originalImage.height.toInt();
+
+      img.drawRect(originalImage, x1, y1, x2, y2, img.getColor(255, 0, 0));
+      img.drawString(originalImage, img.arial_24, x1, y1 - 10,
+          "$label ${(confidence * 100).toStringAsFixed(2)}%",
+          color: img.getColor(255, 255, 255));
     }
-
-    return detectedRegions;
-  }
-
-  void _drawBoundingBox(
-      img.Image image, int x1, int y1, int x2, int y2, int thickness) {
-    for (int i = 0; i < thickness; i++) {
-      img.drawRect(
-        image,
-        x1 - i,
-        y1 - i,
-        x2 + i,
-        y2 + i,
-        img.getColor(255, 0, 0),
-      );
-    }
+    return originalImage;
   }
 
   Future<bool> _checkPermissions() async {
-    final permissions = [
-      Permission.camera,
-      Permission.storage,
-    ];
+    final permissions = [Permission.camera];
     final statuses = await permissions.request();
-
     return statuses.values.every((status) => status.isGranted);
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text("YOLO Scan Page")),
+      appBar: AppBar(title: const Text("Object Detection")),
       body: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(
@@ -212,7 +216,7 @@ class _ScanPageState extends State<ScanPage> {
                     return Column(
                       children: [
                         Text(
-                          "Detected: ${detection.label}, Confidence: ${(detection.confidence * 100).toStringAsFixed(2)}%",
+                          "Detected: ${detection['detectedClass']}, Confidence: ${(detection['confidenceInClass'] * 100).toStringAsFixed(2)}%",
                         ),
                         const Divider(),
                       ],

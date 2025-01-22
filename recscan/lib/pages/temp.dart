@@ -130,7 +130,7 @@ class _MyAppState extends State<MyApp> {
     //   modelPath: modelPath,
     // );
     final modelPath = await _copy('assets/best_float32.tflite');
-    final metadataPath = await _copy('assets/best_metadata.json');
+    final metadataPath = await _copy('assets/metadata.yaml');
     final model = LocalYoloModel(
       id: '',
       task: Task.detect,

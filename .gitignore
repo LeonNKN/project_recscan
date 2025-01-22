@@ -2,3 +2,13 @@
 flutter_env/
 runs/
 YOLO_Trainer/__pycache__/
+#Dataset
+YOLO_Trainer/dataset/item_data
+YOLO_Trainer/dataset/item_data*
+YOLO_Trainer/dataset/receipt_data
+
+#cache
+recscan/linux/flutter/*cmake
+recscan/windows/flutter/*cmake
+recscan/linux/flutter/generated_plugins.cmake
+recscan/windows/flutter/generated_plugins.cmake

@@ -23,9 +23,12 @@ def get_yaml_path(yaml_file_name:str):
     return normalized_path
 
 def train_entire_receipt_model(yaml_file_name:str="data.yaml"):
+    #os.chdir(rf"C:\Users\USER\Desktop\FINAL_PROJECT\test\project_recscan\YOLO_Trainer\dataset")
+    
     trainer = YOLOTrainer(
-        model_path="yolo11n.pt",
-        yaml_path=get_yaml_path(yaml_file_name) # Path to dataset.yaml
+        model_path="yolov8x.pt",
+        #yaml_path=get_yaml_path(yaml_file_name) # Path to dataset.yaml
+        yaml_path=rf"C:\Users\USER\Desktop\FINAL_PROJECT\test\project_recscan\YOLO_Trainer\dataset\item_price_data.yaml"
     )
 
     trainer.train(epochs=50, img_size=640, batch_size=16)
@@ -43,7 +46,7 @@ def train_entire_receipt_model(yaml_file_name:str="data.yaml"):
     inference_results = trainer.predict(new_receipt_path, save_results=True)
     trainer.export_model(export_format="tflite")
 
-def train_itemized_model(yaml_file_name:str="item_price_data.yaml"):
+def train_itemized_model(yaml_file_name:str="data.yaml"):
     trainer = YOLOTrainer(
         model_path="yolo11n.pt",
         yaml_path=get_yaml_path(yaml_file_name) # Path to dataset.yaml
@@ -60,12 +63,13 @@ def train_itemized_model(yaml_file_name:str="item_price_data.yaml"):
     evaluation_results = trainer.evaluate()
     print(evaluation_results)
 
-    new_receipt_path = "item_receipt.png"
-    # inference_results = trainer.predict(new_receipt_path, save_results=True)
-    # trainer.export_model(export_format="tflite")
+    new_receipt_path = fr"C:\Users\USER\Desktop\FINAL_PROJECT\test\project_recscan\YOLO_Trainer\receipt.jpg"
+    trainer.export_model(export_format="tflite")
+    inference_results = trainer.predict(new_receipt_path, save_results=True)
+    
 
     # Run inference
-    results = tflite_model(new_receipt_path)
+    #results = tflite_model(new_receipt_path)
 
 def inference_item_receipt():
     new_receipt_path = "item_receipt.png"
@@ -162,6 +166,7 @@ def organize_crop_receipt_bboxes():
 
     print("Cropping completed. Check 'cropped_items' and 'cropped_prices' folders.")
 
-organize_crop_receipt_bboxes()
-
+#organize_crop_receipt_bboxes()
+train_entire_receipt_model()
+#train_itemized_model()
 
