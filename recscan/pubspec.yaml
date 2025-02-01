@@ -19,7 +19,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 version: 1.0.0+1
 
 environment:
-  sdk: ^3.5.4
+  sdk: ^3.6.1
 
 # Dependencies specify other packages that your package needs in order to work.
 # To automatically upgrade your package dependencies to the latest versions
@@ -30,32 +30,27 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  camera: ^0.10.5+2
-  google_mlkit_text_recognition: ^0.14.0
-  image_picker: ^0.8.7+5
-  image: ^3.2.0
-  tflite_v2: ^1.0.0 
-  ultralytics_yolo: ^0.0.3
-  permission_handler: ^11.3.1
-  path_provider: ^2.1.5
-  path: ^1.9.0
+
   # The following adds the Cupertino Icons font to your application.
   # Use with the CupertinoIcons class for iOS style icons.
   cupertino_icons: ^1.0.8
-
+  pytorch_lite: ^4.3.2
+  image: ^4.0.15
+  path_provider: ^2.1.1
+  permission_handler: ^11.3.1
+  camera: ^0.11.0+2
+  image_picker: ^1.1.2
+  google_mlkit_text_recognition: ^0.14.0 
 dev_dependencies:
   flutter_test:
     sdk: flutter
-  camera: ^0.10.5+2
-  image_picker: ^0.8.7+5
-  tflite_v2: ^1.0.0 
-  flutter_lints: ^4.0.0
 
   # The "flutter_lints" package below contains a set of recommended lints to
   # encourage good coding practices. The lint set provided by the package is
   # activated in the `analysis_options.yaml` file located at the root of your
   # package. See that file for information about deactivating specific lint
   # rules and activating additional ones.
+  flutter_lints: ^5.0.0
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
@@ -67,10 +62,11 @@ flutter:
   # included with your application, so that you can use the icons in
   # the material Icons class.
   uses-material-design: true
+
+  # To add assets to your application, add an assets section, like this:
   assets:
-  - assets/best_float32.tflite
-  - assets/metadata.yaml
-  - assets/labels.txt
+    - assets/best.torchscript
+    - assets/labels.txt
   # To add assets to your application, add an assets section, like this:
   # assets:
   #   - images/a_dot_burr.jpeg
