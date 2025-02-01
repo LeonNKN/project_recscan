@@ -95,8 +95,8 @@ class _ScanPageState extends State<ScanPage> {
     super.dispose();
   }
 
-  Future<void> _pickImage() async {
-    final pickedFile = await _picker.pickImage(source: ImageSource.camera);
+  Future<void> _pickImage(ImageSource source) async {
+    final pickedFile = await _picker.pickImage(source: source);
     if (pickedFile != null) {
       // Read the original image file
       final originalImageFile = File(pickedFile.path);
@@ -117,18 +117,32 @@ class _ScanPageState extends State<ScanPage> {
       await resizedFile.writeAsBytes(img.encodeJpg(resizedImage));
 
       setState(() {
-        _image = resizedFile; // Use the resized image
+        _image = resizedFile;
       });
     }
   }
 
+  double computeMean(img.Image image) {
+    double sum = 0.0; // Declare sum as double
+    for (int y = 0; y < image.height; y++) {
+      for (int x = 0; x < image.width; x++) {
+        final pixel = image.getPixel(x, y);
+        sum += pixel.r; // pixel.r is already a num, which includes double
+      }
+    }
+    return sum / (image.width * image.height); // Result remains double
+  }
+
   Future<File?> _cropImageToDetection(File image, Rect detectionRect) async {
+    // Decode the original image from the file
     final originalImage = img.decodeImage(await image.readAsBytes());
     if (originalImage == null) return null;
 
+    // Get image dimensions
     final width = originalImage.width;
     final height = originalImage.height;
 
+    // Convert normalized detectionRect values to pixel coordinates
     final left = (detectionRect.left * width).clamp(0, width).toInt();
     final top = (detectionRect.top * height).clamp(0, height).toInt();
     final right = (detectionRect.right * width).clamp(0, width).toInt();
@@ -139,6 +153,7 @@ class _ScanPageState extends State<ScanPage> {
 
     if (croppedWidth <= 0 || croppedHeight <= 0) return null;
 
+    // Crop the original image to the detection rectangle
     final croppedImage = img.copyCrop(
       originalImage,
       x: left,
@@ -147,22 +162,58 @@ class _ScanPageState extends State<ScanPage> {
       height: croppedHeight,
     );
 
+    // --- Enhanced Preprocessing ---
+
+    // Convert to grayscale
+    final processedImage = img.grayscale(croppedImage);
+
+    // Normalize the image intensity values to the full range [0, 255]
+    img.normalize(processedImage, min: 0, max: 255);
+
+    // Increase contrast (the second parameter here is the amount of contrast change)
+    img.contrast(processedImage, contrast: 100);
+
+    // Increase saturation (if supported; note that adjustColor may not be available in older versions)
+    img.adjustColor(processedImage, saturation: 2.0);
+
+    // Adaptive thresholding:
+    // Calculate the mean value of the image and use it as a threshold
+    // final thresholdValue = computeMean(processedImage);
+    // img.threshold(processedImage, threshold: thresholdValue);
+
+    // --- Padding and Adjusted Canvas Creation ---
+
     // Adjust dimensions to be multiples of 32
     int newWidth = ((croppedWidth + 31) ~/ 32) * 32;
     int newHeight = ((croppedHeight + 31) ~/ 32) * 32;
 
-    // Create a new image with a white background
+    // Calculate padding to center the processed image
+    final paddingX = (newWidth - croppedWidth) ~/ 2;
+    final paddingY = (newHeight - croppedHeight) ~/ 2;
+
+    // Create a new image with the adjusted dimensions and fill it with white
     final adjustedImage = img.Image(width: newWidth, height: newHeight);
     img.fill(adjustedImage, color: img.ColorRgb8(255, 255, 255));
 
-    // Paste the cropped image into the adjusted image
-    img.compositeImage(adjustedImage, croppedImage, dstX: 0, dstY: 0);
+    // Composite (overlay) the processed image onto the white canvas at the calculated position
+    img.compositeImage(
+      adjustedImage,
+      processedImage,
+      dstX: paddingX,
+      dstY: paddingY,
+    );
 
-    // Save the adjusted image
+    // --- Save the Final Image ---
+
     final directory = await getTemporaryDirectory();
     final path =
         '${directory.path}/cropped_${DateTime.now().millisecondsSinceEpoch}.jpg';
-    return File(path)..writeAsBytesSync(img.encodeJpg(adjustedImage));
+    final file = File(path);
+
+    // Write the image as JPEG asynchronously
+    await file.writeAsBytes(img.encodeJpg(adjustedImage));
+
+    return file;
   }
 
   void loadModel() async {
@@ -217,7 +268,7 @@ class _ScanPageState extends State<ScanPage> {
     try {
       final objDetect = await _objectModel.getImagePrediction(
         await _image!.readAsBytes(),
-        minimumScore: 0.1,
+        minimumScore: 0.5,
         iOUThreshold: 0.3,
       );
 
@@ -283,9 +334,19 @@ class _ScanPageState extends State<ScanPage> {
                     ? const Text('No image selected')
                     : _buildImageWithBoundingBoxes(),
                 const SizedBox(height: 20),
-                ElevatedButton(
-                  onPressed: _pickImage,
-                  child: const Text('Open Camera'),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    ElevatedButton(
+                      onPressed: () => _pickImage(ImageSource.camera),
+                      child: const Text('Open Camera'),
+                    ),
+                    const SizedBox(width: 10),
+                    ElevatedButton(
+                      onPressed: () => _pickImage(ImageSource.gallery),
+                      child: const Text('Choose from Gallery'),
+                    ),
+                  ],
                 ),
                 const SizedBox(height: 10),
                 ElevatedButton(
