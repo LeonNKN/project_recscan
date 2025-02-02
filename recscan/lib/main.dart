@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'pages/home_page.dart';
 import 'pages/scan_page.dart';
-import 'pages/profile_page.dart';
+import 'pages/settings_page.dart';
 import 'widgets/custom_nav_bar.dart'; // Import updated nav bar
 import 'package:permission_handler/permission_handler.dart';
 
@@ -33,7 +33,7 @@ class _MainPageState extends State<MainPage> {
     HomePage(), // Page for Home
     ScanPage(), // Page for First Floating Button
     ScanPage(), // Page for Second Floating Button
-    ProfilePage(), // Page for Profile
+    SettingsPage(settingOption: 'Default'),
   ];
 
   @override
