@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'category_provider.dart';
+import 'package:provider/provider.dart';
 
 class SettingsPage extends StatefulWidget {
   final String settingOption;
@@ -10,20 +12,23 @@ class SettingsPage extends StatefulWidget {
 }
 
 class _SettingsPageState extends State<SettingsPage> {
-  List<String> _categories = [];
-  late String _selectedCategory;
+  late final CategoryProvider _categoryProvider;
 
   @override
   void initState() {
     super.initState();
-    _categories = ['Type A', 'Type B', 'Type C', 'Type D'];
-    _selectedCategory = _categories.contains(widget.settingOption)
-        ? widget.settingOption
-        : _categories[0];
+    // Obtain the provider without listening for rebuilds here.
+    _categoryProvider = Provider.of<CategoryProvider>(context, listen: false);
+    _categoryProvider.setSelectedCategory(
+      _categoryProvider.categories.contains(widget.settingOption)
+          ? widget.settingOption
+          : _categoryProvider.categories.first,
+    );
   }
 
+  /// Opens a dialog to add a new category.
   void _addNewCategory(BuildContext context) {
-    TextEditingController controller = TextEditingController();
+    final TextEditingController controller = TextEditingController();
 
     showDialog(
       context: context,
@@ -45,11 +50,8 @@ class _SettingsPageState extends State<SettingsPage> {
             onPressed: () {
               final newCategory = controller.text.trim();
               if (newCategory.isNotEmpty &&
-                  !_categories.contains(newCategory)) {
-                setState(() {
-                  _categories.add(newCategory);
-                  _selectedCategory = newCategory;
-                });
+                  !_categoryProvider.categories.contains(newCategory)) {
+                _categoryProvider.addCategory(newCategory);
                 Navigator.pop(context);
               }
             },
@@ -60,8 +62,10 @@ class _SettingsPageState extends State<SettingsPage> {
     );
   }
 
+  /// Opens a dialog to edit or delete an existing category.
   void _editCategoryName(BuildContext context, String oldName) {
-    TextEditingController controller = TextEditingController(text: oldName);
+    final TextEditingController controller =
+        TextEditingController(text: oldName);
 
     showDialog(
       context: context,
@@ -75,16 +79,12 @@ class _SettingsPageState extends State<SettingsPage> {
           ),
         ),
         actions: [
+          // Delete button
           IconButton(
             icon: Icon(Icons.delete, color: Colors.red),
             onPressed: () {
-              if (_categories.length > 1) {
-                setState(() {
-                  _categories.remove(oldName);
-                  if (_selectedCategory == oldName) {
-                    _selectedCategory = _categories.first;
-                  }
-                });
+              if (_categoryProvider.categories.length > 1) {
+                _categoryProvider.deleteCategory(oldName);
                 Navigator.pop(context);
               } else {
                 ScaffoldMessenger.of(context).showSnackBar(
@@ -102,14 +102,8 @@ class _SettingsPageState extends State<SettingsPage> {
               final newName = controller.text.trim();
               if (newName.isNotEmpty &&
                   newName != oldName &&
-                  !_categories.contains(newName)) {
-                setState(() {
-                  final index = _categories.indexOf(oldName);
-                  _categories[index] = newName;
-                  if (_selectedCategory == oldName) {
-                    _selectedCategory = newName;
-                  }
-                });
+                  !_categoryProvider.categories.contains(newName)) {
+                _categoryProvider.editCategory(oldName, newName);
                 Navigator.pop(context);
               }
             },
@@ -122,35 +116,42 @@ class _SettingsPageState extends State<SettingsPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: Text('Settings: $_selectedCategory'),
-      ),
-      body: ListView(
-        padding: const EdgeInsets.all(16.0),
-        children: [
-          ExpansionTile(
-            title: Text('Select Category: $_selectedCategory'),
+    return Consumer<CategoryProvider>(
+      builder: (context, provider, child) {
+        return Scaffold(
+          appBar: AppBar(
+            title: Text('Settings: ${provider.selectedCategory}'),
+          ),
+          body: ListView(
             children: [
-              ..._categories.map((category) => ListTile(
-                    title: Text(category),
-                    trailing: _selectedCategory == category
-                        ? Icon(Icons.check, color: Colors.green)
-                        : null,
-                    onTap: () => setState(() => _selectedCategory = category),
-                    onLongPress: () => _editCategoryName(context, category),
-                  )),
-              ListTile(
-                leading: Icon(Icons.add, color: Colors.blue),
-                title: Text('Add New Category',
-                    style: TextStyle(color: Colors.blue)),
-                onTap: () => _addNewCategory(context),
+              ExpansionTile(
+                title: Text('Select Category: ${provider.selectedCategory}'),
+                children: [
+                  // Display each category in the provider.
+                  ...provider.categories.map((category) => ListTile(
+                        title: Text(category),
+                        trailing: provider.selectedCategory == category
+                            ? Icon(Icons.check, color: Colors.green)
+                            : null,
+                        onTap: () => provider.setSelectedCategory(category),
+                        // Long press to edit (or delete) the category.
+                        onLongPress: () => _editCategoryName(context, category),
+                      )),
+                  // Tile to add a new category.
+                  ListTile(
+                    leading: Icon(Icons.add, color: Colors.blue),
+                    title: Text(
+                      'Add New Category',
+                      style: TextStyle(color: Colors.blue),
+                    ),
+                    onTap: () => _addNewCategory(context),
+                  ),
+                ],
               ),
             ],
           ),
-          // ... rest of your existing body code
-        ],
-      ),
+        );
+      },
     );
   }
 }
