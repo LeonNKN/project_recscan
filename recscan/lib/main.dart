@@ -2,11 +2,18 @@ import 'package:flutter/material.dart';
 import 'pages/home_page.dart';
 import 'pages/scan_page.dart';
 import 'pages/settings_page.dart';
-import 'widgets/custom_nav_bar.dart'; // Import updated nav bar
+import 'widgets/custom_nav_bar.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:provider/provider.dart';
+import 'pages/category_provider.dart';
 
 void main() {
-  runApp(MyApp());
+  runApp(
+    ChangeNotifierProvider(
+      create: (context) => CategoryProvider(),
+      child: MyApp(),
+    ),
+  );
 }
 
 class MyApp extends StatelessWidget {
@@ -33,7 +40,7 @@ class _MainPageState extends State<MainPage> {
     HomePage(), // Page for Home
     ScanPage(), // Page for First Floating Button
     ScanPage(), // Page for Second Floating Button
-    SettingsPage(settingOption: 'Default'),
+    SettingsPage(settingOption: 'Type A'),
   ];
 
   @override

@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'category_provider.dart';
+import 'package:provider/provider.dart';
 
 class HomePage extends StatelessWidget {
   @override
@@ -40,7 +42,8 @@ class ExpandableListScreen extends StatefulWidget {
 }
 
 class _ExpandableListScreenState extends State<ExpandableListScreen> {
-  // Sample data: each category contains a title, a category field (not shown in UI), a list of subitems, and a manually set total price.
+  // Sample data: each category contains a title, a category field (not shown in UI),
+  // a list of subitems, and a manually set total price.
   List<CategoryItem> items = [
     CategoryItem(
       title: 'Category 1',
@@ -80,88 +83,79 @@ class _ExpandableListScreenState extends State<ExpandableListScreen> {
     setState(() {
       _selectedFilter = filter;
     });
-    // Implement your filtering logic here.
-    // For this sample, we'll simply print the selected filter.
+    // For this sample, we simply print the selected filter.
     print("Selected Filter: $_selectedFilter");
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Expandable List'),
-        actions: [
-          // Filter Icon with PopupMenuButton
-          PopupMenuButton<String>(
-            onSelected: _selectFilter,
-            icon: Icon(Icons.filter_list),
-            itemBuilder: (BuildContext context) {
-              return [
-                PopupMenuItem(
-                  value: 'All',
-                  child: Text('All'),
+    return Consumer<CategoryProvider>(
+      builder: (context, provider, child) {
+        return Scaffold(
+          appBar: AppBar(
+            title: const Text('Expandable List'),
+            actions: [
+              PopupMenuButton<String>(
+                onSelected: (filter) =>
+                    setState(() => _selectedFilter = filter),
+                itemBuilder: (context) => [
+                  PopupMenuItem(value: 'All', child: Text('All')),
+                  // Add provider categories dynamically:
+                  ...provider.categories.map((category) => PopupMenuItem(
+                        value: category,
+                        child: Text(category),
+                      )),
+                ],
+              ),
+            ],
+          ),
+          body: ListView.builder(
+            itemCount: items.length,
+            itemBuilder: (context, index) {
+              final item = items[index];
+              // If a filter is applied, show only matching items.
+              if (_selectedFilter != 'All' &&
+                  item.category != _selectedFilter) {
+                return SizedBox.shrink();
+              }
+              return ExpansionTile(
+                // Build a header row with an icon, title on the left, and total price on the right.
+                title: Row(
+                  children: [
+                    Icon(Icons.image, color: Colors.blue),
+                    SizedBox(width: 8.0),
+                    Text(
+                      item.title,
+                      style:
+                          TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                    ),
+                    Spacer(),
+                    Text(
+                      '\$${item.totalPrice.toStringAsFixed(2)}',
+                      style: TextStyle(fontSize: 16, color: Colors.grey[700]),
+                    ),
+                  ],
                 ),
-                PopupMenuItem(
-                  value: 'Type A',
-                  child: Text('Type A'),
-                ),
-                PopupMenuItem(
-                  value: 'Type B',
-                  child: Text('Type B'),
-                ),
-                PopupMenuItem(
-                  value: 'Type C',
-                  child: Text('Type C'),
-                ),
-              ];
+                children: item.subItems.asMap().entries.map((entry) {
+                  int subItemIndex = entry.key;
+                  SubItem subItem = entry.value;
+                  return EditableSubItemTile(
+                    initialTitle: subItem.title,
+                    initialPrice: subItem.price,
+                    onSubmitted: (newTitle, newPrice) {
+                      // Update the subitem data when editing is complete.
+                      setState(() {
+                        item.subItems[subItemIndex].title = newTitle;
+                        item.subItems[subItemIndex].price = newPrice;
+                      });
+                    },
+                  );
+                }).toList(),
+              );
             },
           ),
-        ],
-      ),
-      body: ListView.builder(
-        itemCount: items.length,
-        itemBuilder: (context, categoryIndex) {
-          final categoryItem = items[categoryIndex];
-          // Example filter: show only items matching the selected filter
-          if (_selectedFilter != 'All' &&
-              categoryItem.category != _selectedFilter) {
-            return SizedBox.shrink();
-          }
-          return ExpansionTile(
-            // Build a header row with an icon, title on the left, and total price on the right.
-            title: Row(
-              children: [
-                Icon(Icons.image, color: Colors.blue),
-                SizedBox(width: 8.0),
-                Text(
-                  categoryItem.title,
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                ),
-                Spacer(),
-                Text(
-                  '\$${categoryItem.totalPrice.toStringAsFixed(2)}',
-                  style: TextStyle(fontSize: 16, color: Colors.grey[700]),
-                ),
-              ],
-            ),
-            children: categoryItem.subItems.asMap().entries.map((entry) {
-              int subItemIndex = entry.key;
-              SubItem subItem = entry.value;
-              return EditableSubItemTile(
-                initialTitle: subItem.title,
-                initialPrice: subItem.price,
-                onSubmitted: (newTitle, newPrice) {
-                  // Update the subitem data when editing is complete.
-                  setState(() {
-                    categoryItem.subItems[subItemIndex].title = newTitle;
-                    categoryItem.subItems[subItemIndex].price = newPrice;
-                  });
-                },
-              );
-            }).toList(),
-          );
-        },
-      ),
+        );
+      },
     );
   }
 }
