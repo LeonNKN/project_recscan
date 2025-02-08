@@ -1,3 +1,4 @@
+// scan_page.dart
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:pytorch_lite/pytorch_lite.dart';
@@ -6,13 +7,19 @@ import 'package:path_provider/path_provider.dart';
 import 'package:image/image.dart' as img;
 import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
 
+// Import our editable combined result view widget.
+import 'editable_combined_result_card_view.dart';
+// Import the common ItemRow model.
+import 'item_row.dart';
+// Import CategoryItem and SubItem models (for export).
+import 'category_item.dart';
+
 void main() {
   runApp(const MyApp());
 }
 
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
-
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
@@ -26,7 +33,6 @@ class MyApp extends StatelessWidget {
   }
 }
 
-// Add this new class to handle painting bounding boxes
 class BoundingBoxOverlay extends StatelessWidget {
   final List<ResultObjectDetection> detections;
   final Size imageSize;
@@ -49,10 +55,7 @@ class BoundingBoxOverlay extends StatelessWidget {
           height: (rect.bottom - rect.top) * imageSize.height,
           child: Container(
             decoration: BoxDecoration(
-              border: Border.all(
-                color: Colors.red,
-                width: 2,
-              ),
+              border: Border.all(color: Colors.red, width: 2),
             ),
             child: Text(
               '${detection.className} ${(detection.score * 100).toStringAsFixed(1)}%',
@@ -71,7 +74,6 @@ class BoundingBoxOverlay extends StatelessWidget {
 
 class ScanPage extends StatefulWidget {
   const ScanPage({super.key});
-
   @override
   _ScanPageState createState() => _ScanPageState();
 }
@@ -82,40 +84,36 @@ class _ScanPageState extends State<ScanPage> {
   late ModelObjectDetection _objectModel;
   List<ResultObjectDetection> _detections = [];
   final TextRecognizer _textRecognizer = TextRecognizer();
+  List<ItemRow> _itemRows = [];
+  final _formKey = GlobalKey<FormState>();
+  String _total = ''; // Holds detected total
 
   @override
   void initState() {
     super.initState();
-    loadModel(); // Initialize the model when the widget is created
+    loadModel();
   }
 
   @override
   void dispose() {
-    _textRecognizer.close(); // Clean up recognizer
+    _textRecognizer.close();
     super.dispose();
   }
 
   Future<void> _pickImage(ImageSource source) async {
     final pickedFile = await _picker.pickImage(source: source);
     if (pickedFile != null) {
-      // Read the original image file
       final originalImageFile = File(pickedFile.path);
       final bytes = await originalImageFile.readAsBytes();
-
-      // Decode and resize the image
       final originalImage = img.decodeImage(bytes);
       if (originalImage == null) return;
-
       final resizedImage =
           img.copyResize(originalImage, width: 640, height: 640);
-
-      // Save resized image to temporary file
       final directory = await getTemporaryDirectory();
       final resizedPath =
           '${directory.path}/resized_${DateTime.now().millisecondsSinceEpoch}.jpg';
       final resizedFile = File(resizedPath);
       await resizedFile.writeAsBytes(img.encodeJpg(resizedImage));
-
       setState(() {
         _image = resizedFile;
       });
@@ -123,37 +121,28 @@ class _ScanPageState extends State<ScanPage> {
   }
 
   double computeMean(img.Image image) {
-    double sum = 0.0; // Declare sum as double
+    double sum = 0.0;
     for (int y = 0; y < image.height; y++) {
       for (int x = 0; x < image.width; x++) {
         final pixel = image.getPixel(x, y);
-        sum += pixel.r; // pixel.r is already a num, which includes double
+        sum += pixel.r;
       }
     }
-    return sum / (image.width * image.height); // Result remains double
+    return sum / (image.width * image.height);
   }
 
   Future<File?> _cropImageToDetection(File image, Rect detectionRect) async {
-    // Decode the original image from the file
     final originalImage = img.decodeImage(await image.readAsBytes());
     if (originalImage == null) return null;
-
-    // Get image dimensions
     final width = originalImage.width;
     final height = originalImage.height;
-
-    // Convert normalized detectionRect values to pixel coordinates
     final left = (detectionRect.left * width).clamp(0, width).toInt();
     final top = (detectionRect.top * height).clamp(0, height).toInt();
     final right = (detectionRect.right * width).clamp(0, width).toInt();
     final bottom = (detectionRect.bottom * height).clamp(0, height).toInt();
-
     final croppedWidth = right - left;
     final croppedHeight = bottom - top;
-
     if (croppedWidth <= 0 || croppedHeight <= 0) return null;
-
-    // Crop the original image to the detection rectangle
     final croppedImage = img.copyCrop(
       originalImage,
       x: left,
@@ -161,76 +150,43 @@ class _ScanPageState extends State<ScanPage> {
       width: croppedWidth,
       height: croppedHeight,
     );
-
-    // --- Enhanced Preprocessing ---
-
-    // Convert to grayscale
     final processedImage = img.grayscale(croppedImage);
-
-    // Normalize the image intensity values to the full range [0, 255]
     img.normalize(processedImage, min: 0, max: 255);
-
-    // Increase contrast (the second parameter here is the amount of contrast change)
     img.contrast(processedImage, contrast: 100);
-
-    // Increase saturation (if supported; note that adjustColor may not be available in older versions)
     img.adjustColor(processedImage, saturation: 2.0);
-
-    // Adaptive thresholding:
-    // Calculate the mean value of the image and use it as a threshold
-    // final thresholdValue = computeMean(processedImage);
-    // img.threshold(processedImage, threshold: thresholdValue);
-
-    // --- Padding and Adjusted Canvas Creation ---
-
-    // Adjust dimensions to be multiples of 32
     int newWidth = ((croppedWidth + 31) ~/ 32) * 32;
     int newHeight = ((croppedHeight + 31) ~/ 32) * 32;
-
-    // Calculate padding to center the processed image
     final paddingX = (newWidth - croppedWidth) ~/ 2;
     final paddingY = (newHeight - croppedHeight) ~/ 2;
-
-    // Create a new image with the adjusted dimensions and fill it with white
     final adjustedImage = img.Image(width: newWidth, height: newHeight);
     img.fill(adjustedImage, color: img.ColorRgb8(255, 255, 255));
-
-    // Composite (overlay) the processed image onto the white canvas at the calculated position
-    img.compositeImage(
-      adjustedImage,
-      processedImage,
-      dstX: paddingX,
-      dstY: paddingY,
-    );
-
-    // --- Save the Final Image ---
-
+    img.compositeImage(adjustedImage, processedImage,
+        dstX: paddingX, dstY: paddingY);
     final directory = await getTemporaryDirectory();
     final path =
         '${directory.path}/cropped_${DateTime.now().millisecondsSinceEpoch}.jpg';
     final file = File(path);
-
-    // Write the image as JPEG asynchronously
     await file.writeAsBytes(img.encodeJpg(adjustedImage));
-
     return file;
   }
 
   void loadModel() async {
     _objectModel = await PytorchLite.loadObjectDetectionModel(
-        "assets/best.torchscript", 5, 640, 640,
-        labelPath: "assets/labels.txt",
-        objectDetectionModelType: ObjectDetectionModelType.yolov8);
+      "assets/best.torchscript",
+      5,
+      640,
+      640,
+      labelPath: "assets/labels.txt",
+      objectDetectionModelType: ObjectDetectionModelType.yolov8,
+    );
   }
 
   Widget _buildImageWithBoundingBoxes() {
     return LayoutBuilder(
       builder: (context, constraints) {
-        final maxWidth = constraints.maxWidth - 40; // Account for padding
-        final imageSize = Size(640, 640); // Original image size
-
+        const imageSize = Size(640, 640);
         return AspectRatio(
-          aspectRatio: 1, // Maintain square aspect ratio
+          aspectRatio: 1,
           child: FittedBox(
             fit: BoxFit.contain,
             child: SizedBox(
@@ -238,16 +194,12 @@ class _ScanPageState extends State<ScanPage> {
               height: imageSize.height,
               child: Stack(
                 children: [
-                  Image.file(
-                    _image!,
-                    width: imageSize.width,
-                    height: imageSize.height,
-                    fit: BoxFit.cover,
-                  ),
+                  Image.file(_image!,
+                      width: imageSize.width,
+                      height: imageSize.height,
+                      fit: BoxFit.cover),
                   BoundingBoxOverlay(
-                    detections: _detections,
-                    imageSize: imageSize,
-                  ),
+                      detections: _detections, imageSize: imageSize),
                 ],
               ),
             ),
@@ -271,46 +223,80 @@ class _ScanPageState extends State<ScanPage> {
         minimumScore: 0.5,
         iOUThreshold: 0.3,
       );
+      setState(() {
+        _detections = objDetect;
+      });
 
-      setState(() => _detections = objDetect);
-
-      final results = StringBuffer('Detected ${objDetect.length} objects:\n');
+      // Separate detections into lists.
+      List<String> detectedItems = [];
+      List<String> detectedPrices = [];
+      List<String> detectedQty = [];
+      List<String> detectedSubPrices = [];
+      String detectedTotal = '';
 
       for (final detection in objDetect) {
         final pytorchRect = detection.rect;
-        // Convert PyTorchRect to Flutter Rect
         final flutterRect = Rect.fromLTRB(
           pytorchRect.left,
           pytorchRect.top,
           pytorchRect.right,
           pytorchRect.bottom,
         );
-
-        // Object detection info
-        results.writeln(
-            '${detection.className} (${(detection.score * 100).toStringAsFixed(1)}%): '
-            '[${pytorchRect.left.toStringAsFixed(2)}, ${pytorchRect.top.toStringAsFixed(2)}, '
-            '${pytorchRect.right.toStringAsFixed(2)}, ${pytorchRect.bottom.toStringAsFixed(2)}]');
-
-        // Text recognition for this detection
         final croppedFile = await _cropImageToDetection(_image!, flutterRect);
         if (croppedFile != null) {
           final inputImage = InputImage.fromFilePath(croppedFile.path);
-          final text = await _textRecognizer.processImage(inputImage);
-
-          if (text.text.isNotEmpty) {
-            results.writeln('Detected text: ${text.text}');
-            print('Text in ${detection.className}: ${text.text}');
+          final recognizedText = await _textRecognizer.processImage(inputImage);
+          if (recognizedText.text.isNotEmpty) {
+            String className = detection.className?.toLowerCase() ?? '';
+            if (className.contains('item')) {
+              detectedItems.add(recognizedText.text);
+            } else if (className.contains('sub') &&
+                !className.contains('total')) {
+              detectedSubPrices.add(recognizedText.text);
+            } else if (className.contains('price')) {
+              if (className.contains('total')) {
+                detectedTotal = recognizedText.text;
+              } else {
+                detectedPrices.add(recognizedText.text);
+              }
+            } else if (className.contains('qty') ||
+                className.contains('quantity')) {
+              detectedQty.add(recognizedText.text);
+            }
+            print('Detected ${detection.className}: ${recognizedText.text}');
           }
         }
       }
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(results.toString()),
-          duration: const Duration(seconds: 10),
-        ),
-      );
+      int rowCount = [
+        detectedItems.length,
+        detectedPrices.length,
+        detectedQty.length,
+        detectedSubPrices.length
+      ].reduce((a, b) => a > b ? a : b);
+
+      List<ItemRow> combinedRows = [];
+      for (int i = 0; i < rowCount; i++) {
+        String itemValue =
+            (i < detectedItems.length) ? detectedItems[i] : "PLACEHOLDER";
+        String priceValue =
+            (i < detectedPrices.length) ? detectedPrices[i] : "0.00";
+        String qtyValue = (i < detectedQty.length) ? detectedQty[i] : "1";
+        String subPriceValue =
+            (i < detectedSubPrices.length) ? detectedSubPrices[i] : "0.00";
+        combinedRows.add(ItemRow(
+          item: itemValue,
+          price: priceValue,
+          quantity: qtyValue,
+          subPrice: subPriceValue,
+          isUserAdded: false,
+        ));
+      }
+
+      setState(() {
+        _itemRows = combinedRows;
+        _total = detectedTotal;
+      });
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Error processing image: $e')),
@@ -318,7 +304,6 @@ class _ScanPageState extends State<ScanPage> {
     }
   }
 
-// Update the build method's column to handle larger image
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -353,6 +338,36 @@ class _ScanPageState extends State<ScanPage> {
                   onPressed: _runObjectDetection,
                   child: const Text('Run Object Detection'),
                 ),
+                if (_itemRows.isNotEmpty) ...[
+                  const SizedBox(height: 20),
+                  EditableCombinedResultCardView(
+                    itemRows: _itemRows,
+                    total: _total,
+                    onChanged: (updatedRows, updatedTotal) {
+                      setState(() {
+                        _itemRows = updatedRows;
+                        _total = updatedTotal;
+                      });
+                    },
+                    onDone: (finalRows, finalTotal) {
+                      // Convert finalRows into a list of SubItems.
+                      List<SubItem> subItems = finalRows.map((row) {
+                        double price = double.tryParse(row.price) ?? 0.0;
+                        int qty = int.tryParse(row.quantity) ?? 1;
+                        return SubItem(title: row.item, price: price * qty);
+                      }).toList();
+                      double totalPrice = subItems.fold(
+                          0.0, (prev, element) => prev + element.price);
+                      CategoryItem exportedResult = CategoryItem(
+                        title: 'Scan Result',
+                        category: 'Scanned',
+                        subItems: subItems,
+                        totalPrice: totalPrice,
+                      );
+                      Navigator.pop(context, exportedResult);
+                    },
+                  ),
+                ],
               ],
             ),
           ),
