@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
-import 'category_provider.dart';
 import 'package:provider/provider.dart';
+import 'category_provider.dart';
+import 'category_item.dart'; // Ensure you have your CategoryItem and SubItem models here.
+// Use an alias to ensure you're referring to the correct ScanPage.
+import 'scan_page.dart' as scan_page;
 
 class HomePage extends StatelessWidget {
   @override
@@ -12,39 +15,14 @@ class HomePage extends StatelessWidget {
   }
 }
 
-/// Model for each subitem that contains a title and a price.
-class SubItem {
-  String title;
-  double price;
-  SubItem({required this.title, required this.price});
-}
-
-/// Model for each category.
-/// Added an extra field called 'category' which is stored but not displayed.
-class CategoryItem {
-  String title;
-  String category; // New field added but not displayed.
-  List<SubItem> subItems;
-  double totalPrice; // Manually set total price.
-
-  CategoryItem({
-    required this.title,
-    required this.category,
-    required this.subItems,
-    required this.totalPrice,
-  });
-}
-
-/// The main screen containing the expandable list.
 class ExpandableListScreen extends StatefulWidget {
   @override
   _ExpandableListScreenState createState() => _ExpandableListScreenState();
 }
 
 class _ExpandableListScreenState extends State<ExpandableListScreen> {
-  // Sample data: each category contains a title, a category field (not shown in UI),
-  // a list of subitems, and a manually set total price.
-  List<CategoryItem> items = [
+  // Local sample data.
+  List<CategoryItem> localItems = [
     CategoryItem(
       title: 'Category 1',
       category: 'Type A',
@@ -79,18 +57,29 @@ class _ExpandableListScreenState extends State<ExpandableListScreen> {
 
   String _selectedFilter = 'All';
 
-  void _selectFilter(String filter) {
-    setState(() {
-      _selectedFilter = filter;
-    });
-    // For this sample, we simply print the selected filter.
-    print("Selected Filter: $_selectedFilter");
+  // This method navigates to the ScanPage and waits for an exported result.
+  Future<void> _openScanPage(BuildContext context) async {
+    // Assume ScanPage returns a CategoryItem when done.
+    final result = await Navigator.push(
+      context,
+      MaterialPageRoute(
+          builder: (context) => scan_page.ScanPage()), // use alias if needed
+    );
+    if (result != null && result is CategoryItem) {
+      Provider.of<CategoryProvider>(context, listen: false)
+          .addScannedCategory(result);
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     return Consumer<CategoryProvider>(
       builder: (context, provider, child) {
+        // Combine local sample data with scanned results.
+        List<CategoryItem> allItems = [];
+        allItems.addAll(localItems);
+        allItems.addAll(provider.scannedCategories);
+
         return Scaffold(
           appBar: AppBar(
             title: const Text('Expandable List'),
@@ -99,60 +88,58 @@ class _ExpandableListScreenState extends State<ExpandableListScreen> {
                 onSelected: (filter) =>
                     setState(() => _selectedFilter = filter),
                 itemBuilder: (context) => [
-                  PopupMenuItem(value: 'All', child: Text('All')),
-                  // Add provider categories dynamically:
-                  ...provider.categories.map((category) => PopupMenuItem(
-                        value: category,
-                        child: Text(category),
-                      )),
+                  const PopupMenuItem(value: 'All', child: Text('All')),
+                  ...provider.categories.map(
+                    (category) =>
+                        PopupMenuItem(value: category, child: Text(category)),
+                  ),
                 ],
               ),
             ],
           ),
           body: ListView.builder(
-            itemCount: items.length,
+            itemCount: allItems.length,
             itemBuilder: (context, index) {
-              final item = items[index];
-              // If a filter is applied, show only matching items.
+              final item = allItems[index];
               if (_selectedFilter != 'All' &&
                   item.category != _selectedFilter) {
-                return SizedBox.shrink();
+                return const SizedBox.shrink();
               }
               return ExpansionTile(
-                // Build a header row with an icon, title on the left, and total price on the right.
                 title: Row(
                   children: [
-                    Icon(Icons.image, color: Colors.blue),
-                    SizedBox(width: 8.0),
+                    const Icon(Icons.image, color: Colors.blue),
+                    const SizedBox(width: 8.0),
                     Text(
                       item.title,
-                      style:
-                          TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                      style: const TextStyle(
+                          fontSize: 18, fontWeight: FontWeight.bold),
                     ),
-                    Spacer(),
+                    const Spacer(),
                     Text(
                       '\$${item.totalPrice.toStringAsFixed(2)}',
                       style: TextStyle(fontSize: 16, color: Colors.grey[700]),
                     ),
                   ],
                 ),
-                children: item.subItems.asMap().entries.map((entry) {
-                  int subItemIndex = entry.key;
-                  SubItem subItem = entry.value;
-                  return EditableSubItemTile(
-                    initialTitle: subItem.title,
-                    initialPrice: subItem.price,
-                    onSubmitted: (newTitle, newPrice) {
-                      // Update the subitem data when editing is complete.
-                      setState(() {
-                        item.subItems[subItemIndex].title = newTitle;
-                        item.subItems[subItemIndex].price = newPrice;
-                      });
-                    },
-                  );
-                }).toList(),
+                children: item.subItems
+                    .map((subItem) => EditableSubItemTile(
+                          initialTitle: subItem.title,
+                          initialPrice: subItem.price,
+                          onSubmitted: (newTitle, newPrice) {
+                            setState(() {
+                              subItem.title = newTitle;
+                              subItem.price = newPrice;
+                            });
+                          },
+                        ))
+                    .toList(),
               );
             },
+          ),
+          floatingActionButton: FloatingActionButton(
+            onPressed: () => _openScanPage(context),
+            child: const Icon(Icons.camera_alt),
           ),
         );
       },
@@ -160,9 +147,7 @@ class _ExpandableListScreenState extends State<ExpandableListScreen> {
   }
 }
 
-/// A custom widget that displays a subitem with immediate (in-line) editing.
-/// It shows the subitem's title and price, and toggles into an edit mode
-/// where both fields are editable.
+/// A custom widget that displays a subitem with immediate inline editing.
 class EditableSubItemTile extends StatefulWidget {
   final String initialTitle;
   final double initialPrice;
@@ -199,14 +184,11 @@ class _EditableSubItemTileState extends State<EditableSubItemTile> {
     super.dispose();
   }
 
-  /// Toggles the editing state.
-  /// When switching off editing, it validates and submits the updated text and price.
   void _toggleEditing() {
     setState(() {
       isEditing = !isEditing;
     });
     if (!isEditing) {
-      // Try to parse the price text into a double.
       double newPrice =
           double.tryParse(_priceController.text) ?? widget.initialPrice;
       widget.onSubmitted(_titleController.text, newPrice);
@@ -223,14 +205,15 @@ class _EditableSubItemTileState extends State<EditableSubItemTile> {
                 TextField(
                   controller: _titleController,
                   autofocus: true,
-                  decoration: InputDecoration(
+                  decoration: const InputDecoration(
                     labelText: 'Item Title',
                   ),
                 ),
                 TextField(
                   controller: _priceController,
-                  keyboardType: TextInputType.numberWithOptions(decimal: true),
-                  decoration: InputDecoration(
+                  keyboardType:
+                      const TextInputType.numberWithOptions(decimal: true),
+                  decoration: const InputDecoration(
                     labelText: 'Price',
                   ),
                 ),

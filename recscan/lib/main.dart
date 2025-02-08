@@ -1,11 +1,13 @@
+// main.dart (modified)
 import 'package:flutter/material.dart';
 import 'pages/home_page.dart';
-import 'pages/scan_page.dart';
+import 'pages/scan_page.dart' as scan_page; // alias to refer to our ScanPage
 import 'pages/settings_page.dart';
 import 'widgets/custom_nav_bar.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:provider/provider.dart';
 import 'pages/category_provider.dart';
+import 'pages/category_item.dart'; // CategoryItem and SubItem models
 
 void main() {
   runApp(
@@ -36,10 +38,9 @@ class _MainPageState extends State<MainPage> {
   int _selectedIndex = 0;
   String _permissionStatus = "Checking permissions...";
 
+  // Only include pages that are meant to be permanently shown.
   final List<Widget> _pages = [
-    HomePage(), // Page for Home
-    ScanPage(), // Page for First Floating Button
-    ScanPage(), // Page for Second Floating Button
+    HomePage(), // Home page (history)
     SettingsPage(settingOption: 'Type A'),
   ];
 
@@ -49,7 +50,6 @@ class _MainPageState extends State<MainPage> {
     _initializePermissions();
   }
 
-  /// Check and request permissions
   Future<void> _initializePermissions() async {
     bool granted = await _checkPermissions();
     setState(() {
@@ -57,16 +57,13 @@ class _MainPageState extends State<MainPage> {
           ? "Permissions granted. Ready to proceed."
           : "Permission denied. Some features may not work.";
     });
-
     if (!granted) {
-      // Optional: Guide user to settings if permissions are permanently denied
       if (await Permission.camera.isPermanentlyDenied) {
         _showPermissionDialog();
       }
     }
   }
 
-  /// Show a dialog to guide the user to settings
   void _showPermissionDialog() {
     showDialog(
       context: context,
@@ -93,12 +90,10 @@ class _MainPageState extends State<MainPage> {
     );
   }
 
-  /// Check and request permissions
   Future<bool> _checkPermissions() async {
     List<Permission> permissions = [];
     var cameraStatus = await Permission.camera.status;
     if (!cameraStatus.isGranted) permissions.add(Permission.camera);
-
     if (permissions.isEmpty) {
       return true;
     } else {
@@ -107,8 +102,24 @@ class _MainPageState extends State<MainPage> {
     }
   }
 
-  /// Handle navigation between pages
+  /// Instead of having ScanPage in the _pages list, we open it modally.
+  void _onFloatingActionButtonTapped() async {
+    final result = await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => scan_page.ScanPage()),
+    );
+    if (result != null && result is CategoryItem) {
+      Provider.of<CategoryProvider>(context, listen: false)
+          .addScannedCategory(result);
+    }
+    // After scanning, go back to the home page.
+    setState(() {
+      _selectedIndex = 0;
+    });
+  }
+
   void _onItemTapped(int index) {
+    // For non-FAB items, simply update the selected index.
     setState(() {
       _selectedIndex = index;
     });
@@ -135,7 +146,15 @@ class _MainPageState extends State<MainPage> {
       ),
       bottomNavigationBar: CustomNavBarWithTwoFABs(
         selectedIndex: _selectedIndex,
-        onItemTapped: _onItemTapped,
+        onItemTapped: (index) {
+          // We check if the tapped index corresponds to a FAB action.
+          // Suppose indices 1 and 2 are reserved for FAB actions.
+          if (index == 1 || index == 2) {
+            _onFloatingActionButtonTapped();
+          } else {
+            _onItemTapped(index);
+          }
+        },
       ),
     );
   }
