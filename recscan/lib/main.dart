@@ -1,8 +1,8 @@
-// main.dart (modified)
 import 'package:flutter/material.dart';
 import 'pages/home_page.dart';
-import 'pages/scan_page.dart' as scan_page; // alias to refer to our ScanPage
+import 'pages/scan_page.dart' as scan_page; // alias to refer to ScanPage
 import 'pages/settings_page.dart';
+import 'pages/transaction_page.dart'; // Import TransactionPage
 import 'widgets/custom_nav_bar.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:provider/provider.dart';
@@ -38,10 +38,11 @@ class _MainPageState extends State<MainPage> {
   int _selectedIndex = 0;
   String _permissionStatus = "Checking permissions...";
 
-  // Only include pages that are meant to be permanently shown.
+  // Include all main navigation pages here
   final List<Widget> _pages = [
-    HomePage(), // Home page (history)
-    SettingsPage(settingOption: 'Type A'),
+    HomePage(), // Home page (index 0)
+    TransactionPage(), // Transaction Page (index 1)
+    SettingsPage(settingOption: 'Type A'), // Settings page (index 2)
   ];
 
   @override
@@ -119,7 +120,6 @@ class _MainPageState extends State<MainPage> {
   }
 
   void _onItemTapped(int index) {
-    // For non-FAB items, simply update the selected index.
     setState(() {
       _selectedIndex = index;
     });
@@ -130,7 +130,7 @@ class _MainPageState extends State<MainPage> {
     return Scaffold(
       body: Stack(
         children: [
-          _pages[_selectedIndex],
+          _pages[_selectedIndex], // Display selected page
           if (_permissionStatus != "Permissions granted. Ready to proceed.")
             Container(
               color: Colors.black.withOpacity(0.5),
@@ -144,17 +144,9 @@ class _MainPageState extends State<MainPage> {
             ),
         ],
       ),
-      bottomNavigationBar: CustomNavBarWithTwoFABs(
+      bottomNavigationBar: CustomNavBarWithCenterFAB(
         selectedIndex: _selectedIndex,
-        onItemTapped: (index) {
-          // We check if the tapped index corresponds to a FAB action.
-          // Suppose indices 1 and 2 are reserved for FAB actions.
-          if (index == 1 || index == 2) {
-            _onFloatingActionButtonTapped();
-          } else {
-            _onItemTapped(index);
-          }
-        },
+        onItemTapped: _onItemTapped, // Use _onItemTapped
       ),
     );
   }
