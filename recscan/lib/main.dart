@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 import 'pages/home_page.dart';
 import 'pages/scan_page.dart' as scan_page; // alias to refer to ScanPage
+import 'pages/record_page.dart'; // We'll show RecordPage in nav
 import 'pages/settings_page.dart';
-import 'pages/transaction_page.dart'; // Import TransactionPage
+import 'pages/transaction_page.dart'; // TransactionPage
 import 'widgets/custom_nav_bar.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:provider/provider.dart';
@@ -38,11 +39,14 @@ class _MainPageState extends State<MainPage> {
   int _selectedIndex = 0;
   String _permissionStatus = "Checking permissions...";
 
-  // Include all main navigation pages here
+  // We have 5 bottom nav items (indexes 0..4).
+  // Index 2 is the FAB placeholder, so we put a placeholder page at _pages[2].
   final List<Widget> _pages = [
-    HomePage(), // Home page (index 0)
-    TransactionPage(), // Transaction Page (index 1)
-    SettingsPage(settingOption: 'Type A'), // Settings page (index 2)
+    HomePage(), // index 0 => Home
+    TransactionPage(), // index 1 => Card
+    Container(), // index 2 => placeholder for FAB (no page)
+    ReportPage(), // index 3 => Stat
+    SettingsPage(settingOption: 'Type A'), // index 4 => Profile (or Settings)
   ];
 
   @override
@@ -71,7 +75,7 @@ class _MainPageState extends State<MainPage> {
       builder: (context) => AlertDialog(
         title: const Text("Permissions Required"),
         content: const Text(
-            "Camera and storage permissions are required to use this app. Please grant them in your app settings."),
+            "Camera permissions are required to use this app. Please grant them in your app settings."),
         actions: [
           TextButton(
             onPressed: () async {
@@ -92,18 +96,15 @@ class _MainPageState extends State<MainPage> {
   }
 
   Future<bool> _checkPermissions() async {
-    List<Permission> permissions = [];
     var cameraStatus = await Permission.camera.status;
-    if (!cameraStatus.isGranted) permissions.add(Permission.camera);
-    if (permissions.isEmpty) {
-      return true;
-    } else {
-      Map<Permission, PermissionStatus> statuses = await permissions.request();
-      return statuses[Permission.camera] == PermissionStatus.granted;
+    if (!cameraStatus.isGranted) {
+      var result = await Permission.camera.request();
+      return result.isGranted;
     }
+    return true;
   }
 
-  /// Instead of having ScanPage in the _pages list, we open it modally.
+  /// If you want to open ScanPage from the center FAB:
   void _onFloatingActionButtonTapped() async {
     final result = await Navigator.push(
       context,
@@ -119,10 +120,37 @@ class _MainPageState extends State<MainPage> {
     });
   }
 
+  /// This is called from CustomNavBarWithCenterFAB when a bottom item is tapped
   void _onItemTapped(int index) {
-    setState(() {
-      _selectedIndex = index;
-    });
+    // If the user tapped the camera or gallery FAB (indexes 5 or 6),
+    // handle them as special actions (NOT pages in _pages).
+    switch (index) {
+      case 2:
+        // index 2 => the main center FAB in the nav bar
+        // This is toggled inside CustomNavBarWithCenterFAB, so do nothing here.
+        break;
+
+      case 5:
+        // Extra FAB #1 => e.g. open camera
+        // Or do something else:
+        debugPrint("Camera FAB tapped!");
+        // If you want to open the scanning page:
+        _onFloatingActionButtonTapped();
+        break;
+
+      case 6:
+        // Extra FAB #2 => e.g. open gallery
+        debugPrint("Gallery FAB tapped!");
+        // Implement your own logic here...
+        break;
+
+      default:
+        // For indexes 0,1,3,4 => show the corresponding page
+        setState(() {
+          _selectedIndex = index;
+        });
+        break;
+    }
   }
 
   @override
@@ -130,7 +158,9 @@ class _MainPageState extends State<MainPage> {
     return Scaffold(
       body: Stack(
         children: [
-          _pages[_selectedIndex], // Display selected page
+          // Display the currently selected page from the list
+          _pages[_selectedIndex],
+          // If permissions not granted, overlay a semi-transparent message
           if (_permissionStatus != "Permissions granted. Ready to proceed.")
             Container(
               color: Colors.black.withOpacity(0.5),
@@ -146,7 +176,7 @@ class _MainPageState extends State<MainPage> {
       ),
       bottomNavigationBar: CustomNavBarWithCenterFAB(
         selectedIndex: _selectedIndex,
-        onItemTapped: _onItemTapped, // Use _onItemTapped
+        onItemTapped: _onItemTapped,
       ),
     );
   }

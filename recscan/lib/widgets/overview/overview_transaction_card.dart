@@ -1,8 +1,36 @@
 import 'package:flutter/material.dart';
-// Import your ModifyTransactionPage
 import 'package:recscan/pages/modify_transaction_page.dart';
 
-// Models
+// A basic model for your receipts (same as your RestaurantCardModel)
+class ReceiptModel {
+  final int id;
+  final String restaurantName;
+  final DateTime dateTime;
+  final double total;
+  // ... plus items, etc.
+
+  ReceiptModel({
+    required this.id,
+    required this.restaurantName,
+    required this.dateTime,
+    required this.total,
+    // etc...
+  });
+}
+
+// A new model for "Report"
+class ReportModel {
+  final int id;
+  final String title; // e.g. "Report A", "March Expenses", etc.
+  final List<ReceiptModel> receipts;
+
+  ReportModel({
+    required this.id,
+    required this.title,
+    required this.receipts,
+  });
+}
+
 class OrderItem {
   final String name;
   final double price;
@@ -88,6 +116,7 @@ class _ExpandableRestaurantCardState extends State<ExpandableRestaurantCard> {
   @override
   Widget build(BuildContext context) {
     final cardData = _cardData;
+    final itemCount = cardData.items.length;
 
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
@@ -96,54 +125,25 @@ class _ExpandableRestaurantCardState extends State<ExpandableRestaurantCard> {
         onTap: _toggleExpand,
         borderRadius: BorderRadius.circular(12),
         child: Padding(
-          padding: const EdgeInsets.all(12.0),
+          padding: const EdgeInsets.all(16.0),
           child: Column(
             children: [
-              // --- Header Row ---
+              // --- Collapsed Row (Restaurant, total, category, item count) ---
               Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  // Left Icon / Colored Box
-                  Container(
-                    width: 40,
-                    height: 40,
-                    decoration: BoxDecoration(
-                      color: cardData.iconColor,
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-
-                  // Restaurant Name, Date/Time
+                  // Left: Restaurant Name
                   Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          cardData.restaurantName,
-                          style: const TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          // e.g. "19/03/2025, 16:32"
-                          '${cardData.dateTime.day.toString().padLeft(2, '0')}/'
-                          '${cardData.dateTime.month.toString().padLeft(2, '0')}/'
-                          '${cardData.dateTime.year}, '
-                          '${cardData.dateTime.hour.toString().padLeft(2, '0')}:'
-                          '${cardData.dateTime.minute.toString().padLeft(2, '0')}',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Colors.grey[600],
-                          ),
-                        ),
-                      ],
+                    child: Text(
+                      cardData.restaurantName,
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
                   ),
 
-                  // Amount + Category Chip
+                  // Right: total, category, item count
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.end,
                     children: [
@@ -154,22 +154,18 @@ class _ExpandableRestaurantCardState extends State<ExpandableRestaurantCard> {
                           fontWeight: FontWeight.bold,
                         ),
                       ),
-                      const SizedBox(height: 4),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 4,
-                        ),
-                        decoration: BoxDecoration(
+                      Text(
+                        cardData.category,
+                        style: TextStyle(
+                          fontSize: 14,
                           color: cardData.categoryColor,
-                          borderRadius: BorderRadius.circular(12),
                         ),
-                        child: Text(
-                          cardData.category,
-                          style: const TextStyle(
-                            fontSize: 12,
-                            color: Colors.white,
-                          ),
+                      ),
+                      Text(
+                        '$itemCount items',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.grey[600],
                         ),
                       ),
                     ],
@@ -177,86 +173,93 @@ class _ExpandableRestaurantCardState extends State<ExpandableRestaurantCard> {
                 ],
               ),
 
-              // --- Expandable Section ---
+              // --- Expanded Section: Items + Export Buttons + Edit Button ---
               if (_isExpanded) ...[
-                const SizedBox(height: 8),
+                const SizedBox(height: 12),
+                // A thin divider
                 Container(
-                  height: 2,
-                  color: Colors.black12,
+                  height: 1,
+                  color: Colors.grey[300],
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: 12),
 
-                // Show each OrderItem
-                ...cardData.items.map((item) {
-                  final itemTotal = item.price * item.quantity;
-                  return Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 8.0),
-                    child: Row(
-                      children: [
-                        // Left side: item name, then price + quantity
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                item.name,
-                                style: const TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.black,
-                                ),
-                              ),
-                              const SizedBox(height: 4),
-                              Row(
-                                children: [
-                                  Text(
-                                    'RM${item.price.toStringAsFixed(2)}',
-                                    style: const TextStyle(
-                                      fontSize: 12,
-                                      color: Colors.grey,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 8),
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 6,
-                                      vertical: 2,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color: Colors.blue,
-                                      borderRadius: BorderRadius.circular(4),
-                                    ),
-                                    child: Text(
-                                      '${item.quantity}',
-                                      style: const TextStyle(
-                                        fontSize: 12,
-                                        color: Colors.white,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ],
+                // List of items
+                Column(
+                  children: cardData.items.map((item) {
+                    final itemTotal = item.price * item.quantity;
+                    return Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 6),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          // Item name
+                          Expanded(
+                            child: Text(
+                              item.name,
+                              style: const TextStyle(fontSize: 14),
+                            ),
                           ),
-                        ),
-                        Text(
-                          'RM${itemTotal.toStringAsFixed(2)}',
-                          style: const TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.black,
+                          // Price
+                          Text(
+                            'RM${item.price.toStringAsFixed(2)}',
+                            style: const TextStyle(fontSize: 14),
                           ),
-                        ),
-                      ],
+                          const SizedBox(width: 8),
+                          // Quantity in parentheses
+                          Text(
+                            '(${item.quantity})',
+                            style: const TextStyle(
+                              fontSize: 14,
+                              color: Colors.grey,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          // Subtotal
+                          Text(
+                            'RM${itemTotal.toStringAsFixed(2)}',
+                            style: const TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  }).toList(),
+                ),
+
+                const SizedBox(height: 16),
+                // Export buttons row
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  children: [
+                    ElevatedButton(
+                      onPressed: () {
+                        // TODO: Implement your Excel export
+                      },
+                      child: const Text('Excel file'),
                     ),
-                  );
-                }).toList(),
+                    ElevatedButton(
+                      onPressed: () {
+                        // TODO: Implement your PDF export
+                      },
+                      child: const Text('PDF file'),
+                    ),
+                    ElevatedButton(
+                      onPressed: () {
+                        // TODO: Implement your CSV export
+                      },
+                      child: const Text('CSV file'),
+                    ),
+                  ],
+                ),
 
-                const SizedBox(height: 8),
+                // Optional: "Edit" button below export buttons
+                const SizedBox(height: 12),
                 Align(
                   alignment: Alignment.centerRight,
                   child: ElevatedButton(
-                    onPressed: _onEditPressed, // <--- Navigates to Modify
+                    onPressed: _onEditPressed,
                     child: const Text('Edit'),
                   ),
                 ),
