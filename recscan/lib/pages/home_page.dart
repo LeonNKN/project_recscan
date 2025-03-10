@@ -41,7 +41,7 @@ class HomePage extends StatelessWidget {
 
               // Category Overview Cards
               Container(
-                height: 100,
+                height: 120,
                 padding: const EdgeInsets.symmetric(vertical: 8),
                 child: ListView.builder(
                   scrollDirection: Axis.horizontal,
@@ -63,22 +63,25 @@ class HomePage extends StatelessWidget {
                           _openCategoryPage(context);
                         },
                         child: Container(
-                          width: 160,
-                          padding: const EdgeInsets.all(12),
+                          width: 140,
+                          padding: const EdgeInsets.all(8),
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
                               Text(
                                 category,
                                 style: const TextStyle(
                                   fontWeight: FontWeight.bold,
+                                  fontSize: 14,
                                 ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
                               ),
-                              const Spacer(),
                               Text(
                                 'RM${totalAmount.toStringAsFixed(2)}',
                                 style: const TextStyle(
-                                  fontSize: 18,
+                                  fontSize: 16,
                                   fontWeight: FontWeight.bold,
                                 ),
                               ),
