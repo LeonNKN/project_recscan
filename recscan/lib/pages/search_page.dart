@@ -8,7 +8,7 @@ import 'package:recscan/widgets/overview/overview_transaction_card.dart';
 class SearchPage extends StatefulWidget {
   final List<RestaurantCardModel> allCards;
 
-  const SearchPage({Key? key, required this.allCards}) : super(key: key);
+  const SearchPage({super.key, required this.allCards});
 
   @override
   _SearchPageState createState() => _SearchPageState();

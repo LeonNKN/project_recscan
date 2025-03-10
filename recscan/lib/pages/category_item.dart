@@ -1,15 +1,21 @@
-// models/category_item.dart
 class SubItem {
-  String title;
-  double price;
-  SubItem({required this.title, required this.price});
+  final String title;
+  final double price;
+  final int quantity; // Add quantity
+
+  SubItem({
+    required this.title,
+    required this.price,
+    required this.quantity,
+  });
 }
 
 class CategoryItem {
-  String title;
-  String category; // Category type (for filtering)
-  List<SubItem> subItems;
-  double totalPrice;
+  final String title;
+  final String category;
+  final List<SubItem> subItems;
+  final double totalPrice;
+
   CategoryItem({
     required this.title,
     required this.category,

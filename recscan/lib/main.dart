@@ -3,7 +3,7 @@ import 'pages/home_page.dart';
 import 'pages/scan_page.dart' as scan_page; // alias to refer to ScanPage
 import 'pages/record_page.dart'; // We'll show RecordPage in nav
 import 'pages/settings_page.dart';
-import 'pages/transaction_page.dart'; // TransactionPage
+import 'unwanted/transaction_page.dart'; // TransactionPage
 import 'widgets/custom_nav_bar.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:provider/provider.dart';
@@ -20,6 +20,8 @@ void main() {
 }
 
 class MyApp extends StatelessWidget {
+  const MyApp({super.key});
+
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
@@ -31,6 +33,8 @@ class MyApp extends StatelessWidget {
 }
 
 class MainPage extends StatefulWidget {
+  const MainPage({super.key});
+
   @override
   _MainPageState createState() => _MainPageState();
 }
@@ -112,7 +116,7 @@ class _MainPageState extends State<MainPage> {
     );
     if (result != null && result is CategoryItem) {
       Provider.of<CategoryProvider>(context, listen: false)
-          .addScannedCategory(result);
+          .addCategory(result.category);
     }
     // After scanning, go back to the home page.
     setState(() {

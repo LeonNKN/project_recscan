@@ -17,8 +17,7 @@ class CardItem {
 class HorizontalCardsListView extends StatelessWidget {
   final List<CardItem> items;
 
-  const HorizontalCardsListView({Key? key, required this.items})
-      : super(key: key);
+  const HorizontalCardsListView({super.key, required this.items});
 
   @override
   Widget build(BuildContext context) {
@@ -48,11 +47,11 @@ class MyCustomCard extends StatelessWidget {
   final String amount;
 
   const MyCustomCard({
-    Key? key,
+    super.key,
     required this.icon,
     required this.title,
     required this.amount,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {

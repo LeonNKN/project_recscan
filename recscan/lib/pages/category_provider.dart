@@ -1,42 +1,101 @@
-// category_provider.dart
-import 'package:flutter/foundation.dart';
-import 'category_item.dart'; // Create a file for CategoryItem if not done already
+import 'package:flutter/material.dart';
+import 'package:recscan/widgets/overview/overview_transaction_card.dart'; // Adjust import as needed
 
 class CategoryProvider with ChangeNotifier {
-  // Predefined category names (for filtering)
-  List<String> _categories = ['Type A', 'Type B', 'Type C', 'Type D'];
-  String _selectedCategory = 'Type A';
+  // List of restaurant cards
+  final List<RestaurantCardModel> _restaurantCards = [];
 
-  // New list to store exported scan results (history)
-  final List<CategoryItem> _scannedCategories = [];
+  // List of categories (starting with default categories)
+  final List<String> _categories = [
+    'Food & Beverage',
+    'Groceries',
+    'Shopping',
+    'Others'
+  ];
 
+  // Currently selected category
+  String _selectedCategory = 'Food & Beverage';
+
+  // Getters
+  List<RestaurantCardModel> get restaurantCards => _restaurantCards;
   List<String> get categories => _categories;
   String get selectedCategory => _selectedCategory;
 
-  // Getter for scanned results
-  List<CategoryItem> get scannedCategories => _scannedCategories;
-
-  // For filtering, you can continue to use addCategory/editCategory on _categories
-  void addCategory(String newCategory) {
-    _categories.add(newCategory);
-    _selectedCategory = newCategory;
-    notifyListeners();
-  }
-
-  void editCategory(String oldName, String newName) {
-    final index = _categories.indexOf(oldName);
-    if (index != -1) {
-      _categories[index] = newName;
-      if (_selectedCategory == oldName) {
-        _selectedCategory = newName;
-      }
+  // Set the selected category
+  void setSelectedCategory(String category) {
+    if (_categories.contains(category)) {
+      _selectedCategory = category;
       notifyListeners();
     }
   }
 
+  // Add a new category
+  void addCategory(String newCategory) {
+    if (newCategory.isNotEmpty && !_categories.contains(newCategory)) {
+      _categories.add(newCategory);
+      notifyListeners();
+    }
+  }
+
+  // Edit an existing category
+  void editCategory(String oldCategory, String newCategory) {
+    if (newCategory.isNotEmpty &&
+        !_categories.contains(newCategory) &&
+        _categories.contains(oldCategory)) {
+      final index = _categories.indexOf(oldCategory);
+      _categories[index] = newCategory;
+
+      // Update selected category if it was the one edited
+      if (_selectedCategory == oldCategory) {
+        _selectedCategory = newCategory;
+      }
+
+      // Update all cards with the old category
+      for (int i = 0; i < _restaurantCards.length; i++) {
+        final card = _restaurantCards[i];
+        if (card.category == oldCategory) {
+          _restaurantCards[i] = RestaurantCardModel(
+            id: card.id,
+            restaurantName: card.restaurantName,
+            dateTime: card.dateTime,
+            subtotal: card.subtotal,
+            total: card.total,
+            category: newCategory,
+            categoryColor: card.categoryColor,
+            iconColor: card.iconColor,
+            items: card.items,
+          );
+        }
+      }
+
+      notifyListeners();
+    }
+  }
+
+  // Delete a category
   void deleteCategory(String category) {
-    if (_categories.length > 1) {
+    if (_categories.length > 1 && _categories.contains(category)) {
       _categories.remove(category);
+
+      // Move all cards from deleted category to default category
+      for (int i = 0; i < _restaurantCards.length; i++) {
+        final card = _restaurantCards[i];
+        if (card.category == category) {
+          _restaurantCards[i] = RestaurantCardModel(
+            id: card.id,
+            restaurantName: card.restaurantName,
+            dateTime: card.dateTime,
+            subtotal: card.subtotal,
+            total: card.total,
+            category: _categories.first,
+            categoryColor: card.categoryColor,
+            iconColor: card.iconColor,
+            items: card.items,
+          );
+        }
+      }
+
+      // Set selected category to the first one if the deleted one was selected
       if (_selectedCategory == category) {
         _selectedCategory = _categories.first;
       }
@@ -44,19 +103,14 @@ class CategoryProvider with ChangeNotifier {
     }
   }
 
-  void setSelectedCategory(String category) {
-    _selectedCategory = category;
+  // Add a restaurant card
+  void addRestaurantCard(RestaurantCardModel card) {
+    _restaurantCards.add(card);
     notifyListeners();
   }
 
-  // NEW: Add a scan result (CategoryItem) to the history.
-  void addScannedCategory(CategoryItem newCategory) {
-    _scannedCategories.add(newCategory);
-    // Optionally add the category name from the scanned result if it's not already in _categories.
-    if (!_categories.contains(newCategory.category)) {
-      _categories.add(newCategory.category);
-    }
-    _selectedCategory = newCategory.category;
-    notifyListeners();
+  // Get cards by category
+  List<RestaurantCardModel> getCardsByCategory(String category) {
+    return _restaurantCards.where((card) => card.category == category).toList();
   }
 }

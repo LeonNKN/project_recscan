@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:recscan/pages/modify_transaction_page.dart';
 
 // A basic model for your receipts (same as your RestaurantCardModel)
 class ReceiptModel {
@@ -41,12 +40,15 @@ class OrderItem {
     required this.price,
     required this.quantity,
   });
+
+  double get total => price * quantity;
 }
 
 class RestaurantCardModel {
   final int id;
   final String restaurantName;
   final DateTime dateTime;
+  final double subtotal;
   final double total;
   final String category;
   final Color categoryColor;
@@ -57,6 +59,7 @@ class RestaurantCardModel {
     required this.id,
     required this.restaurantName,
     required this.dateTime,
+    required this.subtotal,
     required this.total,
     required this.category,
     required this.categoryColor,
@@ -69,9 +72,9 @@ class ExpandableRestaurantCard extends StatefulWidget {
   final RestaurantCardModel data;
 
   const ExpandableRestaurantCard({
-    Key? key,
+    super.key,
     required this.data,
-  }) : super(key: key);
+  });
 
   @override
   _ExpandableRestaurantCardState createState() =>
@@ -81,76 +84,55 @@ class ExpandableRestaurantCard extends StatefulWidget {
 class _ExpandableRestaurantCardState extends State<ExpandableRestaurantCard> {
   bool _isExpanded = false;
 
-  // Store a local copy so we can update after editing
-  late RestaurantCardModel _cardData;
-
-  @override
-  void initState() {
-    super.initState();
-    _cardData = widget.data; // Initialize local copy
-  }
-
-  void _toggleExpand() {
-    setState(() {
-      _isExpanded = !_isExpanded;
-    });
-  }
-
-  /// Called when user presses "Edit" -> Navigate to ModifyTransactionPage
-  Future<void> _onEditPressed() async {
-    final updatedTransaction = await Navigator.push<RestaurantCardModel>(
-      context,
-      MaterialPageRoute(
-        builder: (context) => ModifyTransactionPage(transaction: _cardData),
-      ),
-    );
-
-    // If user saved changes, 'updatedTransaction' won't be null
-    if (updatedTransaction != null) {
-      setState(() {
-        _cardData = updatedTransaction;
-      });
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
-    final cardData = _cardData;
-    final itemCount = cardData.items.length;
+    final cardData = widget.data;
 
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: InkWell(
-        onTap: _toggleExpand,
+        onTap: () => setState(() => _isExpanded = !_isExpanded),
         borderRadius: BorderRadius.circular(12),
         child: Padding(
           padding: const EdgeInsets.all(16.0),
           child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // --- Collapsed Row (Restaurant, total, category, item count) ---
+              // Header Row
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  // Left: Restaurant Name
+                  // Left: Restaurant Name and DateTime
                   Expanded(
-                    child: Text(
-                      cardData.restaurantName,
-                      style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                      ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          cardData.restaurantName,
+                          style: const TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        Text(
+                          '${cardData.dateTime.day}/${cardData.dateTime.month}/${cardData.dateTime.year}',
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: Colors.grey[600],
+                          ),
+                        ),
+                      ],
                     ),
                   ),
-
-                  // Right: total, category, item count
+                  // Right: Total and Category
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.end,
                     children: [
                       Text(
                         'RM${cardData.total.toStringAsFixed(2)}',
                         style: const TextStyle(
-                          fontSize: 16,
+                          fontSize: 18,
                           fontWeight: FontWeight.bold,
                         ),
                       ),
@@ -161,107 +143,73 @@ class _ExpandableRestaurantCardState extends State<ExpandableRestaurantCard> {
                           color: cardData.categoryColor,
                         ),
                       ),
-                      Text(
-                        '$itemCount items',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Colors.grey[600],
-                        ),
-                      ),
                     ],
                   ),
                 ],
               ),
 
-              // --- Expanded Section: Items + Export Buttons + Edit Button ---
+              // Expanded Content
               if (_isExpanded) ...[
-                const SizedBox(height: 12),
-                // A thin divider
-                Container(
-                  height: 1,
-                  color: Colors.grey[300],
-                ),
-                const SizedBox(height: 12),
-
-                // List of items
-                Column(
-                  children: cardData.items.map((item) {
-                    final itemTotal = item.price * item.quantity;
-                    return Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 6),
+                const Divider(height: 24),
+                // Items List
+                ...cardData.items.map((item) => Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 4),
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          // Item name
+                          // Item name and quantity
                           Expanded(
+                            flex: 2,
                             child: Text(
-                              item.name,
+                              '${item.quantity}x ${item.name}',
                               style: const TextStyle(fontSize: 14),
                             ),
                           ),
-                          // Price
-                          Text(
-                            'RM${item.price.toStringAsFixed(2)}',
-                            style: const TextStyle(fontSize: 14),
-                          ),
-                          const SizedBox(width: 8),
-                          // Quantity in parentheses
-                          Text(
-                            '(${item.quantity})',
-                            style: const TextStyle(
-                              fontSize: 14,
-                              color: Colors.grey,
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          // Subtotal
-                          Text(
-                            'RM${itemTotal.toStringAsFixed(2)}',
-                            style: const TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.bold,
+                          // Price and Total
+                          Expanded(
+                            flex: 1,
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Text(
+                                  'RM${item.price.toStringAsFixed(2)}',
+                                  style: const TextStyle(fontSize: 14),
+                                ),
+                                Text(
+                                  'RM${item.total.toStringAsFixed(2)}',
+                                  style: const TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
                         ],
                       ),
-                    );
-                  }).toList(),
-                ),
+                    )),
 
-                const SizedBox(height: 16),
-                // Export buttons row
+                const Divider(height: 24),
+                // Summary
                 Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    ElevatedButton(
-                      onPressed: () {
-                        // TODO: Implement your Excel export
-                      },
-                      child: const Text('Excel file'),
-                    ),
-                    ElevatedButton(
-                      onPressed: () {
-                        // TODO: Implement your PDF export
-                      },
-                      child: const Text('PDF file'),
-                    ),
-                    ElevatedButton(
-                      onPressed: () {
-                        // TODO: Implement your CSV export
-                      },
-                      child: const Text('CSV file'),
-                    ),
+                    const Text('Subtotal:'),
+                    Text('RM${cardData.subtotal.toStringAsFixed(2)}'),
                   ],
                 ),
-
-                // Optional: "Edit" button below export buttons
-                const SizedBox(height: 12),
-                Align(
-                  alignment: Alignment.centerRight,
-                  child: ElevatedButton(
-                    onPressed: _onEditPressed,
-                    child: const Text('Edit'),
-                  ),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text(
+                      'Total:',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                    Text(
+                      'RM${cardData.total.toStringAsFixed(2)}',
+                      style: const TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                  ],
                 ),
               ],
             ],

@@ -1,18 +1,11 @@
-// scan_page.dart
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:pytorch_lite/pytorch_lite.dart';
 import 'dart:io';
-import 'package:path_provider/path_provider.dart';
-import 'package:image/image.dart' as img;
+import 'package:http/http.dart' as http;
+import 'dart:convert';
+import 'package:recscan/pages/editable_combined_result_card_view.dart';
+import 'package:recscan/widgets/overview/overview_transaction_card.dart';
 import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
-
-// Import our editable combined result view widget.
-import 'editable_combined_result_card_view.dart';
-// Import the common ItemRow model.
-import 'item_row.dart';
-// Import CategoryItem and SubItem models (for export).
-import 'category_item.dart';
 
 void main() {
   runApp(const MyApp());
@@ -23,51 +16,12 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Object Detection',
+      title: 'Receipt Scanner',
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue),
         useMaterial3: true,
       ),
       home: const ScanPage(),
-    );
-  }
-}
-
-class BoundingBoxOverlay extends StatelessWidget {
-  final List<ResultObjectDetection> detections;
-  final Size imageSize;
-
-  const BoundingBoxOverlay({
-    super.key,
-    required this.detections,
-    required this.imageSize,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Stack(
-      children: detections.map((detection) {
-        final rect = detection.rect;
-        return Positioned(
-          left: rect.left * imageSize.width,
-          top: rect.top * imageSize.height,
-          width: (rect.right - rect.left) * imageSize.width,
-          height: (rect.bottom - rect.top) * imageSize.height,
-          child: Container(
-            decoration: BoxDecoration(
-              border: Border.all(color: Colors.red, width: 2),
-            ),
-            child: Text(
-              '${detection.className} ${(detection.score * 100).toStringAsFixed(1)}%',
-              style: const TextStyle(
-                color: Colors.red,
-                backgroundColor: Colors.white,
-                fontSize: 10,
-              ),
-            ),
-          ),
-        );
-      }).toList(),
     );
   }
 }
@@ -81,18 +35,14 @@ class ScanPage extends StatefulWidget {
 class _ScanPageState extends State<ScanPage> {
   File? _image;
   final ImagePicker _picker = ImagePicker();
-  late ModelObjectDetection _objectModel;
-  List<ResultObjectDetection> _detections = [];
-  final TextRecognizer _textRecognizer = TextRecognizer();
-  List<ItemRow> _itemRows = [];
-  final _formKey = GlobalKey<FormState>();
-  String _total = ''; // Holds detected total
-
-  @override
-  void initState() {
-    super.initState();
-    loadModel();
-  }
+  final _textRecognizer = TextRecognizer();
+  List<OrderItem> _orderItems = [];
+  String _total = '';
+  String _merchantName = '';
+  String _date = '';
+  bool _isProcessing = false;
+  String? _error;
+  String? _extractedText;
 
   @override
   void dispose() {
@@ -100,279 +50,261 @@ class _ScanPageState extends State<ScanPage> {
     super.dispose();
   }
 
+  Future<String?> _extractTextFromImage(File imageFile) async {
+    try {
+      final inputImage = InputImage.fromFile(imageFile);
+      final recognizedText = await _textRecognizer.processImage(inputImage);
+
+      // Clean up the text
+      String cleanText = recognizedText.text
+          .split('\n')
+          .map((line) => line.trim())
+          .where((line) => line.isNotEmpty)
+          .join('\n');
+
+      return cleanText;
+    } catch (e) {
+      setState(() => _error = 'Error extracting text: $e');
+      return null;
+    }
+  }
+
   Future<void> _pickImage(ImageSource source) async {
     final pickedFile = await _picker.pickImage(source: source);
     if (pickedFile != null) {
-      final originalImageFile = File(pickedFile.path);
-      final bytes = await originalImageFile.readAsBytes();
-      final originalImage = img.decodeImage(bytes);
-      if (originalImage == null) return;
-      final resizedImage =
-          img.copyResize(originalImage, width: 640, height: 640);
-      final directory = await getTemporaryDirectory();
-      final resizedPath =
-          '${directory.path}/resized_${DateTime.now().millisecondsSinceEpoch}.jpg';
-      final resizedFile = File(resizedPath);
-      await resizedFile.writeAsBytes(img.encodeJpg(resizedImage));
       setState(() {
-        _image = resizedFile;
+        _image = File(pickedFile.path);
+        _orderItems = [];
+        _total = '';
+        _merchantName = '';
+        _date = '';
+        _error = null;
+        _extractedText = null;
       });
+      await _processReceipt();
     }
   }
 
-  double computeMean(img.Image image) {
-    double sum = 0.0;
-    for (int y = 0; y < image.height; y++) {
-      for (int x = 0; x < image.width; x++) {
-        final pixel = image.getPixel(x, y);
-        sum += pixel.r;
-      }
-    }
-    return sum / (image.width * image.height);
-  }
+  Future<void> _processReceipt() async {
+    if (_image == null) return;
 
-  Future<File?> _cropImageToDetection(File image, Rect detectionRect) async {
-    final originalImage = img.decodeImage(await image.readAsBytes());
-    if (originalImage == null) return null;
-    final width = originalImage.width;
-    final height = originalImage.height;
-    final left = (detectionRect.left * width).clamp(0, width).toInt();
-    final top = (detectionRect.top * height).clamp(0, height).toInt();
-    final right = (detectionRect.right * width).clamp(0, width).toInt();
-    final bottom = (detectionRect.bottom * height).clamp(0, height).toInt();
-    final croppedWidth = right - left;
-    final croppedHeight = bottom - top;
-    if (croppedWidth <= 0 || croppedHeight <= 0) return null;
-    final croppedImage = img.copyCrop(
-      originalImage,
-      x: left,
-      y: top,
-      width: croppedWidth,
-      height: croppedHeight,
-    );
-    final processedImage = img.grayscale(croppedImage);
-    img.normalize(processedImage, min: 0, max: 255);
-    img.contrast(processedImage, contrast: 100);
-    img.adjustColor(processedImage, saturation: 2.0);
-    int newWidth = ((croppedWidth + 31) ~/ 32) * 32;
-    int newHeight = ((croppedHeight + 31) ~/ 32) * 32;
-    final paddingX = (newWidth - croppedWidth) ~/ 2;
-    final paddingY = (newHeight - croppedHeight) ~/ 2;
-    final adjustedImage = img.Image(width: newWidth, height: newHeight);
-    img.fill(adjustedImage, color: img.ColorRgb8(255, 255, 255));
-    img.compositeImage(adjustedImage, processedImage,
-        dstX: paddingX, dstY: paddingY);
-    final directory = await getTemporaryDirectory();
-    final path =
-        '${directory.path}/cropped_${DateTime.now().millisecondsSinceEpoch}.jpg';
-    final file = File(path);
-    await file.writeAsBytes(img.encodeJpg(adjustedImage));
-    return file;
-  }
-
-  void loadModel() async {
-    _objectModel = await PytorchLite.loadObjectDetectionModel(
-      "assets/best.torchscript",
-      5,
-      640,
-      640,
-      labelPath: "assets/labels.txt",
-      objectDetectionModelType: ObjectDetectionModelType.yolov8,
-    );
-  }
-
-  Widget _buildImageWithBoundingBoxes() {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        const imageSize = Size(640, 640);
-        return AspectRatio(
-          aspectRatio: 1,
-          child: FittedBox(
-            fit: BoxFit.contain,
-            child: SizedBox(
-              width: imageSize.width,
-              height: imageSize.height,
-              child: Stack(
-                children: [
-                  Image.file(_image!,
-                      width: imageSize.width,
-                      height: imageSize.height,
-                      fit: BoxFit.cover),
-                  BoundingBoxOverlay(
-                      detections: _detections, imageSize: imageSize),
-                ],
-              ),
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  void _runObjectDetection() async {
-    if (_image == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please capture an image first!')),
-      );
-      return;
-    }
+    setState(() => _isProcessing = true);
 
     try {
-      final objDetect = await _objectModel.getImagePrediction(
-        await _image!.readAsBytes(),
-        minimumScore: 0.5,
-        iOUThreshold: 0.3,
+      // First extract text from image
+      final extractedText = await _extractTextFromImage(_image!);
+      if (extractedText == null || extractedText.isEmpty) {
+        setState(() => _error = 'Could not extract text from image');
+        return;
+      }
+
+      setState(() => _extractedText = extractedText);
+
+      // Send extracted text to API
+      final uri = Uri.parse('http://192.168.68.104:8000/analyze-receipt');
+      final response = await http.post(
+        uri,
+        headers: {'Content-Type': 'application/json'},
+        body: json.encode({'text': extractedText}),
       );
-      setState(() {
-        _detections = objDetect;
-      });
 
-      // Separate detections into lists.
-      List<String> detectedItems = [];
-      List<String> detectedPrices = [];
-      List<String> detectedQty = [];
-      List<String> detectedSubPrices = [];
-      String detectedTotal = '';
+      if (response.statusCode == 200) {
+        final jsonResponse = json.decode(response.body);
 
-      for (final detection in objDetect) {
-        final pytorchRect = detection.rect;
-        final flutterRect = Rect.fromLTRB(
-          pytorchRect.left,
-          pytorchRect.top,
-          pytorchRect.right,
-          pytorchRect.bottom,
-        );
-        final croppedFile = await _cropImageToDetection(_image!, flutterRect);
-        if (croppedFile != null) {
-          final inputImage = InputImage.fromFilePath(croppedFile.path);
-          final recognizedText = await _textRecognizer.processImage(inputImage);
-          if (recognizedText.text.isNotEmpty) {
-            String className = detection.className?.toLowerCase() ?? '';
-            if (className.contains('item')) {
-              detectedItems.add(recognizedText.text);
-            } else if (className.contains('sub') &&
-                !className.contains('total')) {
-              detectedSubPrices.add(recognizedText.text);
-            } else if (className.contains('price')) {
-              if (className.contains('total')) {
-                detectedTotal = recognizedText.text;
-              } else {
-                detectedPrices.add(recognizedText.text);
-              }
-            } else if (className.contains('qty') ||
-                className.contains('quantity')) {
-              detectedQty.add(recognizedText.text);
-            }
-            print('Detected ${detection.className}: ${recognizedText.text}');
-          }
+        if (jsonResponse['success'] == true) {
+          final data = jsonResponse['data'];
+          final items = (data['items'] as List)
+              .map((item) => OrderItem(
+                    name: item['name'] as String,
+                    quantity: item['quantity'] as int,
+                    price: item['unit_price'] as double,
+                  ))
+              .toList();
+
+          setState(() {
+            _orderItems = items;
+            _total = data['total_amount'].toString();
+            _merchantName = data['merchant_name'] ?? 'Unknown Merchant';
+            _date = data['date'] ?? DateTime.now().toString().split(' ')[0];
+            _error = null;
+          });
+        } else {
+          setState(() =>
+              _error = jsonResponse['error'] ?? 'Failed to parse receipt');
         }
+      } else {
+        setState(() => _error = 'Server error: ${response.statusCode}');
       }
-
-      int rowCount = [
-        detectedItems.length,
-        detectedPrices.length,
-        detectedQty.length,
-        detectedSubPrices.length
-      ].reduce((a, b) => a > b ? a : b);
-
-      List<ItemRow> combinedRows = [];
-      for (int i = 0; i < rowCount; i++) {
-        String itemValue =
-            (i < detectedItems.length) ? detectedItems[i] : "PLACEHOLDER";
-        String priceValue =
-            (i < detectedPrices.length) ? detectedPrices[i] : "0.00";
-        String qtyValue = (i < detectedQty.length) ? detectedQty[i] : "1";
-        String subPriceValue =
-            (i < detectedSubPrices.length) ? detectedSubPrices[i] : "0.00";
-        combinedRows.add(ItemRow(
-          item: itemValue,
-          price: priceValue,
-          quantity: qtyValue,
-          subPrice: subPriceValue,
-          isUserAdded: false,
-        ));
-      }
-
-      setState(() {
-        _itemRows = combinedRows;
-        _total = detectedTotal;
-      });
     } catch (e) {
+      setState(() => _error = 'Error processing receipt: $e');
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error processing image: $e')),
+        SnackBar(content: Text('Error processing receipt: $e')),
       );
+    } finally {
+      setState(() => _isProcessing = false);
     }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Object Detection')),
+      appBar: AppBar(
+        title: const Text('Scan Receipt'),
+        elevation: 0,
+      ),
       body: SingleChildScrollView(
-        child: Center(
-          child: Padding(
-            padding: const EdgeInsets.all(20.0),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: <Widget>[
-                _image == null
-                    ? const Text('No image selected')
-                    : _buildImageWithBoundingBoxes(),
-                const SizedBox(height: 20),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    ElevatedButton(
-                      onPressed: () => _pickImage(ImageSource.camera),
-                      child: const Text('Open Camera'),
-                    ),
-                    const SizedBox(width: 10),
-                    ElevatedButton(
-                      onPressed: () => _pickImage(ImageSource.gallery),
-                      child: const Text('Choose from Gallery'),
+        child: Column(
+          children: [
+            // Image Preview Section
+            if (_image != null)
+              Container(
+                height: 200,
+                width: double.infinity,
+                margin: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.grey[200],
+                  borderRadius: BorderRadius.circular(12),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.grey.withOpacity(0.3),
+                      spreadRadius: 1,
+                      blurRadius: 5,
+                      offset: const Offset(0, 2),
                     ),
                   ],
                 ),
-                const SizedBox(height: 10),
-                ElevatedButton(
-                  onPressed: _runObjectDetection,
-                  child: const Text('Run Object Detection'),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(12),
+                  child: Image.file(_image!, fit: BoxFit.contain),
                 ),
-                if (_itemRows.isNotEmpty) ...[
-                  const SizedBox(height: 20),
-                  EditableCombinedResultCardView(
-                    itemRows: _itemRows,
-                    total: _total,
-                    onChanged: (updatedRows, updatedTotal) {
-                      setState(() {
-                        _itemRows = updatedRows;
-                        _total = updatedTotal;
-                      });
-                    },
-                    onDone: (finalRows, finalTotal) {
-                      // Convert finalRows into a list of SubItems.
-                      List<SubItem> subItems = finalRows.map((row) {
-                        double price = double.tryParse(row.price) ?? 0.0;
-                        int qty = int.tryParse(row.quantity) ?? 1;
-                        return SubItem(title: row.item, price: price * qty);
-                      }).toList();
-                      double totalPrice = subItems.fold(
-                          0.0, (prev, element) => prev + element.price);
-                      CategoryItem exportedResult = CategoryItem(
-                        title: 'Scan Result',
-                        category: 'Scanned',
-                        subItems: subItems,
-                        totalPrice: totalPrice,
-                      );
-                      Navigator.pop(context, exportedResult);
-                    },
+              ),
+
+            // Camera and Gallery Buttons
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: [
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      onPressed: _isProcessing
+                          ? null
+                          : () => _pickImage(ImageSource.camera),
+                      icon: const Icon(Icons.camera_alt),
+                      label: const Text('Camera'),
+                      style: ElevatedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      onPressed: _isProcessing
+                          ? null
+                          : () => _pickImage(ImageSource.gallery),
+                      icon: const Icon(Icons.photo_library),
+                      label: const Text('Gallery'),
+                      style: ElevatedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                      ),
+                    ),
                   ),
                 ],
-              ],
+              ),
             ),
-          ),
+
+            // Loading Indicator
+            if (_isProcessing)
+              const Padding(
+                padding: EdgeInsets.all(20),
+                child: Column(
+                  children: [
+                    CircularProgressIndicator(),
+                    SizedBox(height: 16),
+                    Text('Processing receipt...'),
+                  ],
+                ),
+              ),
+
+            // Error Message
+            if (_error != null)
+              Container(
+                margin: const EdgeInsets.all(16),
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.red[50],
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.red[200]!),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.error_outline, color: Colors.red),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        _error!,
+                        style: const TextStyle(color: Colors.red),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+            // Receipt Details
+            if (_orderItems.isNotEmpty)
+              EditableCombinedResultCardView(
+                orderItems: _orderItems,
+                subtotal: _calculateSubtotal(),
+                total: _total,
+                onChanged: (updatedOrderItems, updatedSubtotal, updatedTotal) {
+                  setState(() {
+                    _orderItems = updatedOrderItems;
+                    _total = updatedTotal;
+                  });
+                },
+                onDone: (finalOrderItems, finalSubtotal, finalTotal,
+                    selectedCategory) {
+                  final parsedDate = DateTime.tryParse(_date) ?? DateTime.now();
+                  final subtotalValue = double.tryParse(finalSubtotal) ?? 0.0;
+
+                  RestaurantCardModel exportedResult = RestaurantCardModel(
+                    id: DateTime.now().millisecondsSinceEpoch,
+                    restaurantName: _merchantName,
+                    dateTime: parsedDate,
+                    subtotal: subtotalValue,
+                    total: double.tryParse(finalTotal) ?? 0.0,
+                    category: selectedCategory,
+                    categoryColor: Colors.blue,
+                    iconColor: Colors.red,
+                    items: finalOrderItems,
+                  );
+                  Navigator.pop(context, exportedResult);
+                },
+              ),
+          ],
         ),
       ),
     );
   }
+
+  String _calculateSubtotal() {
+    double subtotal = _orderItems.fold(
+      0.0,
+      (sum, item) => sum + (item.price * item.quantity),
+    );
+    return subtotal.toStringAsFixed(2);
+  }
+}
+
+class ReceiptParseResult {
+  final List<OrderItem> items;
+  final double subtotal;
+  final double total;
+
+  ReceiptParseResult({
+    required this.items,
+    required this.subtotal,
+    required this.total,
+  });
 }

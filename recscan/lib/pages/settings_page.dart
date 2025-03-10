@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
-import 'category_provider.dart';
 import 'package:provider/provider.dart';
+import 'category_provider.dart';
 
 class SettingsPage extends StatefulWidget {
   final String settingOption;
 
-  const SettingsPage({Key? key, required this.settingOption}) : super(key: key);
+  const SettingsPage({super.key, required this.settingOption});
 
   @override
   _SettingsPageState createState() => _SettingsPageState();
@@ -17,26 +17,32 @@ class _SettingsPageState extends State<SettingsPage> {
   @override
   void initState() {
     super.initState();
-    // Obtain the provider without listening for rebuilds here.
+    final provider = Provider.of<CategoryProvider>(context);
     _categoryProvider = Provider.of<CategoryProvider>(context, listen: false);
-    _categoryProvider.setSelectedCategory(
-      _categoryProvider.categories.contains(widget.settingOption)
-          ? widget.settingOption
-          : _categoryProvider.categories.first,
-    );
+    // Safely set the selected category
+    if (_categoryProvider.categories.isNotEmpty) {
+      _categoryProvider.setSelectedCategory(
+        _categoryProvider.categories.contains(widget.settingOption)
+            ? widget.settingOption
+            : _categoryProvider.categories.first,
+      );
+    } else {
+      // Handle the case of an empty category list if needed
+      // For now, we'll assume the provider initializes with at least one category
+    }
   }
 
-  /// Opens a dialog to add a new category.
+  /// Opens a dialog to add a new category with user feedback.
   void _addNewCategory(BuildContext context) {
     final TextEditingController controller = TextEditingController();
 
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text('Add New Category'),
+        title: const Text('Add New Category'),
         content: TextField(
           controller: controller,
-          decoration: InputDecoration(
+          decoration: const InputDecoration(
             labelText: 'Category Name',
             border: OutlineInputBorder(),
           ),
@@ -44,25 +50,33 @@ class _SettingsPageState extends State<SettingsPage> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: Text('Cancel'),
+            child: const Text('Cancel'),
           ),
           ElevatedButton(
             onPressed: () {
               final newCategory = controller.text.trim();
-              if (newCategory.isNotEmpty &&
-                  !_categoryProvider.categories.contains(newCategory)) {
+              if (newCategory.isEmpty) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                      content: Text('Category name cannot be empty')),
+                );
+              } else if (_categoryProvider.categories.contains(newCategory)) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Category already exists')),
+                );
+              } else {
                 _categoryProvider.addCategory(newCategory);
                 Navigator.pop(context);
               }
             },
-            child: Text('Add'),
+            child: const Text('Add'),
           ),
         ],
       ),
     );
   }
 
-  /// Opens a dialog to edit or delete an existing category.
+  /// Opens a dialog to edit or delete an existing category with confirmation and feedback.
   void _editCategoryName(BuildContext context, String oldName) {
     final TextEditingController controller =
         TextEditingController(text: oldName);
@@ -70,44 +84,78 @@ class _SettingsPageState extends State<SettingsPage> {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text('Edit Category'),
+        title: const Text('Edit Category'),
         content: TextField(
           controller: controller,
-          decoration: InputDecoration(
+          decoration: const InputDecoration(
             labelText: 'Category Name',
             border: OutlineInputBorder(),
           ),
         ),
         actions: [
-          // Delete button
+          // Delete button with confirmation
           IconButton(
-            icon: Icon(Icons.delete, color: Colors.red),
-            onPressed: () {
-              if (_categoryProvider.categories.length > 1) {
-                _categoryProvider.deleteCategory(oldName);
-                Navigator.pop(context);
-              } else {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('At least one category required')),
-                );
-              }
-            },
+            icon: const Icon(Icons.delete, color: Colors.red),
+            onPressed: _categoryProvider.categories.length > 1
+                ? () {
+                    showDialog(
+                      context: context,
+                      builder: (context) => AlertDialog(
+                        title: const Text('Confirm Deletion'),
+                        content:
+                            Text('Are you sure you want to delete "$oldName"?'),
+                        actions: [
+                          TextButton(
+                            onPressed: () => Navigator.pop(context),
+                            child: const Text('Cancel'),
+                          ),
+                          ElevatedButton(
+                            onPressed: () {
+                              _categoryProvider.deleteCategory(oldName);
+                              // Ensure selected category is valid after deletion
+                              if (_categoryProvider.selectedCategory ==
+                                      oldName &&
+                                  _categoryProvider.categories.isNotEmpty) {
+                                _categoryProvider.setSelectedCategory(
+                                    _categoryProvider.categories.first);
+                              }
+                              Navigator.pop(
+                                  context); // Close confirmation dialog
+                              Navigator.pop(context); // Close edit dialog
+                            },
+                            child: const Text('Delete'),
+                          ),
+                        ],
+                      ),
+                    );
+                  }
+                : null, // Disable button if only one category remains
           ),
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: Text('Cancel'),
+            child: const Text('Cancel'),
           ),
           ElevatedButton(
             onPressed: () {
               final newName = controller.text.trim();
-              if (newName.isNotEmpty &&
-                  newName != oldName &&
-                  !_categoryProvider.categories.contains(newName)) {
+              if (newName.isEmpty) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                      content: Text('Category name cannot be empty')),
+                );
+              } else if (newName != oldName &&
+                  _categoryProvider.categories.contains(newName)) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Category already exists')),
+                );
+              } else if (newName != oldName) {
                 _categoryProvider.editCategory(oldName, newName);
                 Navigator.pop(context);
+              } else {
+                Navigator.pop(context); // Close dialog if no changes
               }
             },
-            child: Text('Save'),
+            child: const Text('Save'),
           ),
         ],
       ),
@@ -127,20 +175,19 @@ class _SettingsPageState extends State<SettingsPage> {
               ExpansionTile(
                 title: Text('Select Category: ${provider.selectedCategory}'),
                 children: [
-                  // Display each category in the provider.
+                  // Display each category in the provider
                   ...provider.categories.map((category) => ListTile(
                         title: Text(category),
                         trailing: provider.selectedCategory == category
-                            ? Icon(Icons.check, color: Colors.green)
+                            ? const Icon(Icons.check, color: Colors.green)
                             : null,
                         onTap: () => provider.setSelectedCategory(category),
-                        // Long press to edit (or delete) the category.
                         onLongPress: () => _editCategoryName(context, category),
                       )),
-                  // Tile to add a new category.
+                  // Tile to add a new category
                   ListTile(
-                    leading: Icon(Icons.add, color: Colors.blue),
-                    title: Text(
+                    leading: const Icon(Icons.add, color: Colors.blue),
+                    title: const Text(
                       'Add New Category',
                       style: TextStyle(color: Colors.blue),
                     ),

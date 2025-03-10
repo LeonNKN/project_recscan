@@ -4,8 +4,7 @@ import 'package:recscan/widgets/overview/overview_transaction_card.dart';
 class CreateReportPage extends StatefulWidget {
   final List<ReceiptModel> allReceipts;
 
-  const CreateReportPage({Key? key, required this.allReceipts})
-      : super(key: key);
+  const CreateReportPage({super.key, required this.allReceipts});
 
   @override
   _CreateReportPageState createState() => _CreateReportPageState();

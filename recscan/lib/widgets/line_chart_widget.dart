@@ -6,6 +6,8 @@ void main() {
 }
 
 class ChartApp extends StatelessWidget {
+  const ChartApp({super.key});
+
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
@@ -24,6 +26,8 @@ class ChartHomePage extends StatelessWidget {
     FlSpot(3, 3.1),
     FlSpot(4, 4),
   ];
+
+  const ChartHomePage({super.key});
 
   @override
   Widget build(BuildContext context) {

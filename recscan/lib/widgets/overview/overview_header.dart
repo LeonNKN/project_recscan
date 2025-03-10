@@ -5,9 +5,9 @@ class OverviewHeader extends StatefulWidget {
   final ValueChanged<String> onDropdownChanged;
 
   const OverviewHeader({
-    Key? key,
+    super.key,
     required this.onDropdownChanged,
-  }) : super(key: key);
+  });
 
   @override
   _OverviewHeaderState createState() => _OverviewHeaderState();

@@ -1,147 +1,202 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'category_provider.dart';
-import 'category_item.dart';
 import 'scan_page.dart' as scan_page;
-import 'package:recscan/widgets/overview/overview_category_card_view.dart';
-import 'package:recscan/widgets/overview/overview_header.dart'; // <-- updated header
+import 'package:recscan/widgets/overview/overview_header.dart';
 import 'package:recscan/widgets/overview/overview_transaction_card.dart';
+import 'search_page.dart';
+import 'categorypage.dart';
 
 class HomePage extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Immediate Editing Demo',
-      home: ExpandableListScreen(),
-    );
-  }
-}
-
-class ExpandableListScreen extends StatefulWidget {
-  @override
-  _ExpandableListScreenState createState() => _ExpandableListScreenState();
-}
-
-class _ExpandableListScreenState extends State<ExpandableListScreen> {
-  // Example data for your horizontal card view (existing)
-  final List<CardItem> _cardItems = [
-    CardItem(
-      icon: Icons.shopping_cart,
-      title: 'CONSUMER LOAN',
-      amount: '-\$6,496.00',
-    ),
-    CardItem(
-      icon: Icons.shopping_cart,
-      title: 'AUTO LOAN',
-      amount: '-\$1,250.00',
-    ),
-    CardItem(
-      icon: Icons.shopping_cart,
-      title: 'PERSONAL LOAN',
-      amount: '-\$3,400.00',
-    ),
-  ];
-
-  // Example data for your ExpandableRestaurantCard
-  final List<RestaurantCardModel> _restaurantCards = [
-    RestaurantCardModel(
-      id: 1001,
-      restaurantName: 'KAYU RESTAURANT',
-      dateTime: DateTime(2025, 3, 19, 16, 32),
-      total: 100.00,
-      category: 'Shopping',
-      categoryColor: Colors.blue,
-      iconColor: Colors.red,
-      items: [
-        OrderItem(name: 'Jalapeno', price: 15.0, quantity: 2),
-        OrderItem(name: 'nasi', price: 15.0, quantity: 1),
-        OrderItem(name: 'ice', price: 34.0, quantity: 1),
-      ],
-    ),
-    RestaurantCardModel(
-      id: 1002,
-      restaurantName: 'Example Cafe',
-      dateTime: DateTime(2025, 3, 20, 10, 15),
-      total: 56.70,
-      category: 'Food',
-      categoryColor: Colors.orange,
-      iconColor: Colors.green,
-      items: [
-        OrderItem(name: 'Latte', price: 12.5, quantity: 1),
-        OrderItem(name: 'Sandwich', price: 15.0, quantity: 1),
-      ],
-    ),
-  ];
-
-  // Dummy search function (you can implement your own)
-  void _searchTransactions() {
-    // Show a dialog, or use showSearch with a SearchDelegate
-    debugPrint('Search icon tapped! Implement search logic here.');
-  }
-
-  // Navigate to ScanPage and wait for result
-  Future<void> _openScanPage(BuildContext context) async {
-    final result = await Navigator.push(
-      context,
-      MaterialPageRoute(builder: (context) => scan_page.ScanPage()),
-    );
-    if (result != null && result is CategoryItem) {
-      // Suppose you add scanned categories to a provider, etc.
-      Provider.of<CategoryProvider>(context, listen: false)
-          .addScannedCategory(result);
-    }
-  }
+  const HomePage({super.key});
 
   @override
   Widget build(BuildContext context) {
     return Consumer<CategoryProvider>(
       builder: (context, provider, child) {
+        final allCards = provider.restaurantCards;
+
         return Scaffold(
           appBar: AppBar(
-            // Empty title or you could add your own text
-            title: const Text(''),
-            // Replace category selector with search icon
+            title: const Text('RecScan'),
             actions: [
               IconButton(
                 icon: const Icon(Icons.search),
-                onPressed: _searchTransactions,
+                onPressed: () => _openSearchPage(context, allCards),
+              ),
+              IconButton(
+                icon: const Icon(Icons.category),
+                onPressed: () => _openCategoryPage(context),
               ),
             ],
           ),
           body: Column(
             children: [
-              // 1) OverviewHeader (optional)
+              // Overview Header
               OverviewHeader(
                 onDropdownChanged: (newPeriod) {
-                  debugPrint('Selected period: $newPeriod');
-                  // Filter your data or do something with newPeriod if needed
+                  // TODO: Implement period filtering
                 },
               ),
 
-              // 2) Horizontal cards below the header (optional)
-              HorizontalCardsListView(items: _cardItems),
-
-              // 3) A vertical list of ExpandableRestaurantCards
-              Expanded(
+              // Category Overview Cards
+              Container(
+                height: 100,
+                padding: const EdgeInsets.symmetric(vertical: 8),
                 child: ListView.builder(
-                  itemCount: _restaurantCards.length,
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  itemCount: provider.categories.length,
                   itemBuilder: (context, index) {
-                    return ExpandableRestaurantCard(
-                      data: _restaurantCards[index],
+                    final category = provider.categories[index];
+                    final categoryCards = provider.getCardsByCategory(category);
+                    final totalAmount = categoryCards.fold(
+                      0.0,
+                      (sum, card) => sum + card.total,
+                    );
+
+                    return Card(
+                      margin: const EdgeInsets.only(right: 8),
+                      child: InkWell(
+                        onTap: () {
+                          provider.setSelectedCategory(category);
+                          _openCategoryPage(context);
+                        },
+                        child: Container(
+                          width: 160,
+                          padding: const EdgeInsets.all(12),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                category,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              const Spacer(),
+                              Text(
+                                'RM${totalAmount.toStringAsFixed(2)}',
+                                style: const TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              Text(
+                                '${categoryCards.length} items',
+                                style: TextStyle(
+                                  color: Colors.grey[600],
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
                     );
                   },
                 ),
               ),
+
+              // Recent Transactions
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text(
+                      'Recent Transactions',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    TextButton(
+                      onPressed: () => _openCategoryPage(context),
+                      child: const Text('View All'),
+                    ),
+                  ],
+                ),
+              ),
+
+              // Transactions List
+              Expanded(
+                child: allCards.isEmpty
+                    ? Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              Icons.receipt_long,
+                              size: 64,
+                              color: Colors.grey[400],
+                            ),
+                            const SizedBox(height: 16),
+                            Text(
+                              'No receipts yet',
+                              style: TextStyle(
+                                fontSize: 16,
+                                color: Colors.grey[600],
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              'Tap the camera button to scan a receipt',
+                              style: TextStyle(
+                                fontSize: 14,
+                                color: Colors.grey[600],
+                              ),
+                            ),
+                          ],
+                        ),
+                      )
+                    : ListView.builder(
+                        itemCount: allCards.length,
+                        padding: const EdgeInsets.symmetric(horizontal: 8),
+                        itemBuilder: (context, index) {
+                          return ExpandableRestaurantCard(
+                            data: allCards[index],
+                          );
+                        },
+                      ),
+              ),
             ],
           ),
-
-          // Floating Action Button for scanning, if needed
           floatingActionButton: FloatingActionButton(
             onPressed: () => _openScanPage(context),
             child: const Icon(Icons.camera_alt),
           ),
         );
       },
+    );
+  }
+
+  Future<void> _openScanPage(BuildContext context) async {
+    final result = await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => scan_page.ScanPage()),
+    );
+    if (result != null && result is RestaurantCardModel) {
+      Provider.of<CategoryProvider>(context, listen: false)
+          .addRestaurantCard(result);
+    }
+  }
+
+  void _openSearchPage(BuildContext context, List<RestaurantCardModel> cards) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => SearchPage(allCards: cards),
+      ),
+    );
+  }
+
+  void _openCategoryPage(BuildContext context) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => const CategoryPage(),
+      ),
     );
   }
 }

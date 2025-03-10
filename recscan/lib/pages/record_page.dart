@@ -3,7 +3,7 @@ import 'package:recscan/widgets/overview/overview_transaction_card.dart';
 import 'create_record_page.dart';
 
 class ReportPage extends StatefulWidget {
-  const ReportPage({Key? key}) : super(key: key);
+  const ReportPage({super.key});
 
   @override
   _ReportPageState createState() => _ReportPageState();
@@ -100,7 +100,7 @@ class _ReportPageState extends State<ReportPage> {
               title: Text(r.restaurantName),
               trailing: Text('RM${r.total.toStringAsFixed(2)}'),
             );
-          }).toList(),
+          }),
 
           // Add some spacing before the export buttons
           const SizedBox(height: 8),

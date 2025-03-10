@@ -1,21 +1,25 @@
-// editable_combined_result_card_view.dart
 import 'package:flutter/material.dart';
-import 'item_row.dart';
+import 'package:recscan/widgets/overview/overview_transaction_card.dart';
+import 'package:provider/provider.dart';
+import 'package:recscan/pages/category_provider.dart';
 
 class EditableCombinedResultCardView extends StatefulWidget {
-  final List<ItemRow> itemRows;
+  final List<OrderItem> orderItems;
+  final String subtotal;
   final String total;
-  final Function(List<ItemRow> updatedRows, String updatedTotal) onChanged;
-  final Function(List<ItemRow> finalRows, String finalTotal)
-      onDone; // Add this parameter
+  final Function(List<OrderItem> updatedOrderItems, String updatedSubtotal,
+      String updatedTotal) onChanged;
+  final Function(List<OrderItem> finalOrderItems, String finalSubtotal,
+      String finalTotal, String selectedCategory) onDone;
 
   const EditableCombinedResultCardView({
-    Key? key,
-    required this.itemRows,
+    super.key,
+    required this.orderItems,
+    required this.subtotal,
     required this.total,
     required this.onChanged,
-    required this.onDone, // And require it in the constructor
-  }) : super(key: key);
+    required this.onDone,
+  });
 
   @override
   _EditableCombinedResultCardViewState createState() =>
@@ -24,211 +28,362 @@ class EditableCombinedResultCardView extends StatefulWidget {
 
 class _EditableCombinedResultCardViewState
     extends State<EditableCombinedResultCardView> {
-  late List<ItemRow> _rows;
+  late List<OrderItem> _orderItems;
+  late TextEditingController _subtotalController;
   late TextEditingController _totalController;
+  String _selectedCategory = 'Default Category';
+  bool _isEditing = false;
 
   @override
   void initState() {
     super.initState();
-    _rows = widget.itemRows
-        .map((row) => ItemRow(
-              item: row.item,
-              price: row.price,
-              quantity: row.quantity,
-              subPrice: row.subPrice,
-              isUserAdded: row.isUserAdded,
+    _orderItems = widget.orderItems
+        .map((item) => OrderItem(
+              name: item.name,
+              price: item.price,
+              quantity: item.quantity,
             ))
         .toList();
+    _subtotalController = TextEditingController(text: widget.subtotal);
     _totalController = TextEditingController(text: widget.total);
   }
 
   @override
   void dispose() {
+    _subtotalController.dispose();
     _totalController.dispose();
     super.dispose();
   }
 
-  void _updateRow(int index, String field, String newValue) {
+  void _updateOrderItem(int index, String field, String newValue) {
     setState(() {
-      if (field == 'item') {
-        _rows[index].item = newValue.isNotEmpty ? newValue : 'PLACEHOLDER';
+      if (field == 'name') {
+        _orderItems[index] = OrderItem(
+          name: newValue.isNotEmpty ? newValue : 'Item ${index + 1}',
+          price: _orderItems[index].price,
+          quantity: _orderItems[index].quantity,
+        );
       } else if (field == 'price') {
-        _rows[index].price = newValue.isNotEmpty ? newValue : '0.00';
+        double price = double.tryParse(newValue) ?? 0.0;
+        _orderItems[index] = OrderItem(
+          name: _orderItems[index].name,
+          price: price,
+          quantity: _orderItems[index].quantity,
+        );
       } else if (field == 'quantity') {
-        _rows[index].quantity = newValue.isNotEmpty ? newValue : '1';
-      } else if (field == 'subPrice') {
-        _rows[index].subPrice = newValue.isNotEmpty ? newValue : '0.00';
+        int quantity = int.tryParse(newValue) ?? 1;
+        _orderItems[index] = OrderItem(
+          name: _orderItems[index].name,
+          price: _orderItems[index].price,
+          quantity: quantity,
+        );
       }
-      double price = double.tryParse(_rows[index].price) ?? 0.0;
-      int qty = int.tryParse(_rows[index].quantity) ?? 1;
-      _rows[index].subPrice = (price * qty).toStringAsFixed(2);
-      widget.onChanged(_rows, _totalController.text);
+      _updateTotals();
     });
   }
 
-  void _deleteRow(int index) {
+  void _updateTotals() {
+    double subtotal =
+        _orderItems.fold(0, (sum, item) => sum + (item.price * item.quantity));
+    _subtotalController.text = subtotal.toStringAsFixed(2);
+    _totalController.text = subtotal.toStringAsFixed(2);
+
+    widget.onChanged(
+      _orderItems,
+      _subtotalController.text,
+      _totalController.text,
+    );
+  }
+
+  void _deleteOrderItem(int index) {
     setState(() {
-      _rows.removeAt(index);
-      widget.onChanged(_rows, _totalController.text);
+      _orderItems.removeAt(index);
+      _updateTotals();
     });
   }
 
-  void _addRow() {
+  void _addOrderItem() {
     setState(() {
-      _rows.add(ItemRow(
-        item: 'PLACEHOLDER',
-        price: '0.00',
-        quantity: '1',
-        subPrice: '0.00',
-        isUserAdded: true,
+      _orderItems.add(OrderItem(
+        name: 'Item ${_orderItems.length + 1}',
+        price: 0.00,
+        quantity: 1,
       ));
-      widget.onChanged(_rows, _totalController.text);
+      _updateTotals();
     });
   }
 
-  Widget _buildEditableRow(int index) {
-    final row = _rows[index];
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4.0),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Expanded(
-            child: TextFormField(
-              initialValue: row.item,
-              style: const TextStyle(fontSize: 12),
-              decoration: const InputDecoration(
-                labelText: 'Item',
-                isDense: true,
-                contentPadding:
-                    EdgeInsets.symmetric(vertical: 8, horizontal: 8),
-              ),
-              onChanged: (value) => _updateRow(index, 'item', value),
-            ),
+  void _selectCategory() async {
+    final categories =
+        Provider.of<CategoryProvider>(context, listen: false).categories;
+    final selectedCategory = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Select Category'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: categories
+                .map((category) => ListTile(
+                      title: Text(category),
+                      onTap: () => Navigator.pop(context, category),
+                    ))
+                .toList(),
           ),
-          const SizedBox(width: 4),
-          Expanded(
-            child: TextFormField(
-              initialValue: row.price,
-              style: const TextStyle(fontSize: 12),
-              decoration: const InputDecoration(
-                labelText: 'Price',
-                isDense: true,
-                contentPadding:
-                    EdgeInsets.symmetric(vertical: 8, horizontal: 8),
-              ),
-              keyboardType: TextInputType.number,
-              onChanged: (value) => _updateRow(index, 'price', value),
-            ),
-          ),
-          const SizedBox(width: 4),
-          Expanded(
-            child: TextFormField(
-              initialValue: row.quantity,
-              style: const TextStyle(fontSize: 12),
-              decoration: const InputDecoration(
-                labelText: 'Qty',
-                isDense: true,
-                contentPadding:
-                    EdgeInsets.symmetric(vertical: 8, horizontal: 8),
-              ),
-              keyboardType: TextInputType.number,
-              onChanged: (value) => _updateRow(index, 'quantity', value),
-            ),
-          ),
-          const SizedBox(width: 4),
-          Expanded(
-            child: TextFormField(
-              initialValue: row.subPrice,
-              style: const TextStyle(fontSize: 12),
-              decoration: const InputDecoration(
-                labelText: 'Sub Price',
-                isDense: true,
-                contentPadding:
-                    EdgeInsets.symmetric(vertical: 8, horizontal: 8),
-              ),
-              keyboardType: TextInputType.number,
-              onChanged: (value) => _updateRow(index, 'subPrice', value),
-            ),
-          ),
-          IconButton(
-            icon: const Icon(Icons.delete, size: 16),
-            onPressed: () => _deleteRow(index),
-          ),
-        ],
+        ),
       ),
     );
+
+    if (selectedCategory != null) {
+      setState(() {
+        _selectedCategory = selectedCategory;
+      });
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     return Card(
-      margin: const EdgeInsets.all(16.0),
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          children: [
-            // Header row.
-            Row(
-              children: const [
-                Expanded(
-                    child: Text('Item',
-                        style: TextStyle(
-                            fontWeight: FontWeight.bold, fontSize: 12))),
-                Expanded(
-                    child: Text('Price',
-                        style: TextStyle(
-                            fontWeight: FontWeight.bold, fontSize: 12))),
-                Expanded(
-                    child: Text('Qty',
-                        style: TextStyle(
-                            fontWeight: FontWeight.bold, fontSize: 12))),
-                Expanded(
-                    child: Text('Sub Price',
-                        style: TextStyle(
-                            fontWeight: FontWeight.bold, fontSize: 12))),
-                SizedBox(width: 24),
+      elevation: 4,
+      margin: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // Header
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Theme.of(context).primaryColor.withOpacity(0.1),
+              borderRadius: const BorderRadius.only(
+                topLeft: Radius.circular(4),
+                topRight: Radius.circular(4),
+              ),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'Receipt Details',
+                  style: Theme.of(context).textTheme.titleLarge,
+                ),
+                IconButton(
+                  icon: Icon(_isEditing ? Icons.done : Icons.edit),
+                  onPressed: () => setState(() => _isEditing = !_isEditing),
+                ),
               ],
             ),
-            const Divider(),
-            // Editable rows.
-            ListView.builder(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              itemCount: _rows.length,
-              itemBuilder: (context, index) => _buildEditableRow(index),
+          ),
+
+          // Category Selection
+          ListTile(
+            leading: const Icon(Icons.category),
+            title: Text(_selectedCategory),
+            trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+            onTap: _selectCategory,
+          ),
+
+          const Divider(),
+
+          // Items List
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Column(
+              children: [
+                // Items Header
+                if (_orderItems.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          flex: 3,
+                          child: Text(
+                            'Item',
+                            style: Theme.of(context).textTheme.titleSmall,
+                          ),
+                        ),
+                        SizedBox(
+                          width: 80,
+                          child: Text(
+                            'Price',
+                            style: Theme.of(context).textTheme.titleSmall,
+                          ),
+                        ),
+                        SizedBox(
+                          width: 60,
+                          child: Text(
+                            'Qty',
+                            style: Theme.of(context).textTheme.titleSmall,
+                          ),
+                        ),
+                        const SizedBox(width: 40),
+                      ],
+                    ),
+                  ),
+
+                // Items
+                ListView.builder(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  itemCount: _orderItems.length,
+                  itemBuilder: (context, index) {
+                    final item = _orderItems[index];
+                    return Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 4),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            flex: 3,
+                            child: _isEditing
+                                ? TextFormField(
+                                    initialValue: item.name,
+                                    decoration: InputDecoration(
+                                      isDense: true,
+                                      contentPadding:
+                                          const EdgeInsets.symmetric(
+                                              vertical: 8),
+                                      hintText: 'Item name',
+                                      border: OutlineInputBorder(
+                                        borderRadius: BorderRadius.circular(8),
+                                      ),
+                                    ),
+                                    onChanged: (value) =>
+                                        _updateOrderItem(index, 'name', value),
+                                  )
+                                : Text(item.name),
+                          ),
+                          const SizedBox(width: 8),
+                          SizedBox(
+                            width: 80,
+                            child: _isEditing
+                                ? TextFormField(
+                                    initialValue: item.price.toString(),
+                                    decoration: InputDecoration(
+                                      isDense: true,
+                                      contentPadding:
+                                          const EdgeInsets.symmetric(
+                                              vertical: 8),
+                                      prefixText: 'RM',
+                                      border: OutlineInputBorder(
+                                        borderRadius: BorderRadius.circular(8),
+                                      ),
+                                    ),
+                                    keyboardType: TextInputType.number,
+                                    onChanged: (value) =>
+                                        _updateOrderItem(index, 'price', value),
+                                  )
+                                : Text('RM${item.price.toStringAsFixed(2)}'),
+                          ),
+                          const SizedBox(width: 8),
+                          SizedBox(
+                            width: 60,
+                            child: _isEditing
+                                ? TextFormField(
+                                    initialValue: item.quantity.toString(),
+                                    decoration: InputDecoration(
+                                      isDense: true,
+                                      contentPadding:
+                                          const EdgeInsets.symmetric(
+                                              vertical: 8),
+                                      border: OutlineInputBorder(
+                                        borderRadius: BorderRadius.circular(8),
+                                      ),
+                                    ),
+                                    keyboardType: TextInputType.number,
+                                    onChanged: (value) => _updateOrderItem(
+                                        index, 'quantity', value),
+                                  )
+                                : Text(item.quantity.toString()),
+                          ),
+                          if (_isEditing)
+                            IconButton(
+                              icon: const Icon(Icons.delete, color: Colors.red),
+                              onPressed: () => _deleteOrderItem(index),
+                              padding: EdgeInsets.zero,
+                              constraints: const BoxConstraints(),
+                            ),
+                        ],
+                      ),
+                    );
+                  },
+                ),
+
+                // Add Item Button
+                if (_isEditing)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    child: ElevatedButton.icon(
+                      onPressed: _addOrderItem,
+                      icon: const Icon(Icons.add),
+                      label: const Text('Add Item'),
+                      style: ElevatedButton.styleFrom(
+                        minimumSize: const Size(double.infinity, 40),
+                      ),
+                    ),
+                  ),
+              ],
             ),
-            // Add Row button.
-            TextButton.icon(
-              onPressed: _addRow,
-              icon: const Icon(Icons.add, size: 16),
-              label: const Text('Add Row', style: TextStyle(fontSize: 12)),
+          ),
+
+          const Divider(),
+
+          // Totals Section
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text('Subtotal'),
+                    Text(
+                      'RM${_subtotalController.text}',
+                      style: const TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text(
+                      'Total',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                    Text(
+                      'RM${_totalController.text}',
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 18,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
             ),
-            const Divider(),
-            // Editable total field.
-            TextFormField(
-              controller: _totalController,
-              style: const TextStyle(fontSize: 12),
-              decoration: const InputDecoration(
-                labelText: 'Total',
-                isDense: true,
-                contentPadding:
-                    EdgeInsets.symmetric(vertical: 8, horizontal: 8),
-              ),
-              keyboardType: TextInputType.number,
-              onChanged: (value) {
-                widget.onChanged(_rows, value);
-              },
-            ),
-            // DONE button to export final result.
-            ElevatedButton(
+          ),
+
+          // Done Button
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: ElevatedButton(
               onPressed: () {
-                widget.onDone(_rows, _totalController.text);
+                widget.onDone(
+                  _orderItems,
+                  _subtotalController.text,
+                  _totalController.text,
+                  _selectedCategory,
+                );
               },
-              child: const Text('DONE', style: TextStyle(fontSize: 12)),
+              style: ElevatedButton.styleFrom(
+                minimumSize: const Size(double.infinity, 48),
+                backgroundColor: Theme.of(context).primaryColor,
+                foregroundColor: Colors.white,
+              ),
+              child: const Text('Save Receipt'),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
