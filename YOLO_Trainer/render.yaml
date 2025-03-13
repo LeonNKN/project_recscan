@@ -1,16 +1,17 @@
 services:
   - type: web
     name: receipt-scanner-api
-    env: python
-    buildCommand: pip install -r requirements.txt
-    startCommand: uvicorn detect_api:app --host 0.0.0.0 --port $PORT --workers 1 --timeout-keep-alive 75
+    env: docker
+    dockerfilePath: ./Dockerfile
     envVars:
-      - key: PYTHON_VERSION
-        value: 3.9.0
+      - key: ENV
+        value: production
       - key: OLLAMA_HOST
-        value: https://ollama.ai
-      - key: PYTHONUNBUFFERED
-        value: 1
+        value: http://localhost:11434
+      - key: API_TIMEOUT
+        value: 30
+      - key: ENABLE_CACHE
+        value: true
     healthCheckPath: /health
     autoDeploy: true
     plan: free
