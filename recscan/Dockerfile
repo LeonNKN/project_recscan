@@ -36,10 +36,11 @@ RUN flutter build web
 RUN apt-get update && apt-get install -y nodejs npm
 RUN npm install -g serve
 
+# Set environment variable
+ENV ENV=production
+
 # Expose the port
 EXPOSE 8080
 
 # Start the server
-CMD ["serve", "-s", "build/web", "-l", "8080"]
-
-ENV=production 
+CMD ["serve", "-s", "build/web", "-l", "8080"] 
