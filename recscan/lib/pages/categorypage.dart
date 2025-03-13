@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'category_provider.dart';
 import 'scan_page.dart' as scan_page;
-import 'package:recscan/widgets/overview/overview_transaction_card.dart';
+import '../models/models.dart';
+import '../widgets/overview/overview_transaction_card.dart'
+    hide RestaurantCardModel;
 
 class CategoryPage extends StatelessWidget {
   const CategoryPage({super.key});
@@ -43,18 +45,21 @@ class CategoryPage extends StatelessWidget {
 
                     return Padding(
                       padding: const EdgeInsets.only(right: 8),
-                      child: ChoiceChip(
+                      child: FilterChip(
                         label: Text(category),
                         selected: isSelected,
-                        onSelected: (_) =>
-                            provider.setSelectedCategory(category),
+                        onSelected: (selected) {
+                          if (selected) {
+                            provider.setSelectedCategory(category);
+                          }
+                        },
                       ),
                     );
                   },
                 ),
               ),
 
-              // Cards List
+              // Transactions List
               Expanded(
                 child: cards.isEmpty
                     ? Center(
@@ -68,7 +73,7 @@ class CategoryPage extends StatelessWidget {
                             ),
                             const SizedBox(height: 16),
                             Text(
-                              'No receipts in ${provider.selectedCategory}',
+                              'No transactions in this category',
                               style: TextStyle(
                                 fontSize: 16,
                                 color: Colors.grey[600],
@@ -82,16 +87,22 @@ class CategoryPage extends StatelessWidget {
                         padding: const EdgeInsets.all(8),
                         itemBuilder: (context, index) {
                           return ExpandableRestaurantCard(
-                            data: cards[index],
+                            data: TransactionCardModel(
+                              id: cards[index].id,
+                              restaurantName: cards[index].restaurantName,
+                              dateTime: cards[index].dateTime,
+                              subtotal: cards[index].subtotal,
+                              total: cards[index].total,
+                              category: cards[index].category,
+                              categoryColor: cards[index].categoryColor,
+                              iconColor: cards[index].iconColor,
+                              items: cards[index].items,
+                            ),
                           );
                         },
                       ),
               ),
             ],
-          ),
-          floatingActionButton: FloatingActionButton(
-            onPressed: () => _openScanPage(context),
-            child: const Icon(Icons.camera_alt),
           ),
         );
       },
@@ -111,6 +122,7 @@ class CategoryPage extends StatelessWidget {
 
   void _showAddCategoryDialog(BuildContext context, CategoryProvider provider) {
     final controller = TextEditingController();
+
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -119,9 +131,8 @@ class CategoryPage extends StatelessWidget {
           controller: controller,
           decoration: const InputDecoration(
             labelText: 'Category Name',
-            border: OutlineInputBorder(),
+            hintText: 'e.g. Entertainment',
           ),
-          textCapitalization: TextCapitalization.words,
         ),
         actions: [
           TextButton(
@@ -130,9 +141,8 @@ class CategoryPage extends StatelessWidget {
           ),
           ElevatedButton(
             onPressed: () {
-              final name = controller.text.trim();
-              if (name.isNotEmpty) {
-                provider.addCategory(name);
+              if (controller.text.isNotEmpty) {
+                provider.addCategory(controller.text);
                 Navigator.pop(context);
               }
             },
@@ -145,64 +155,18 @@ class CategoryPage extends StatelessWidget {
 
   void _showEditCategoryDialog(
       BuildContext context, CategoryProvider provider) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Edit Categories'),
-        content: SizedBox(
-          width: double.maxFinite,
-          child: ListView.builder(
-            shrinkWrap: true,
-            itemCount: provider.categories.length,
-            itemBuilder: (context, index) {
-              final category = provider.categories[index];
-              return ListTile(
-                title: Text(category),
-                trailing: IconButton(
-                  icon: const Icon(Icons.delete),
-                  onPressed: provider.categories.length > 1
-                      ? () {
-                          provider.deleteCategory(category);
-                          Navigator.pop(context);
-                        }
-                      : null,
-                ),
-                onTap: () => _showRenameCategoryDialog(
-                  context,
-                  provider,
-                  category,
-                ),
-              );
-            },
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Done'),
-          ),
-        ],
-      ),
-    );
-  }
+    final controller = TextEditingController(text: provider.selectedCategory);
 
-  void _showRenameCategoryDialog(
-    BuildContext context,
-    CategoryProvider provider,
-    String oldCategory,
-  ) {
-    final controller = TextEditingController(text: oldCategory);
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Rename Category'),
+        title: const Text('Edit Category'),
         content: TextField(
           controller: controller,
           decoration: const InputDecoration(
             labelText: 'Category Name',
-            border: OutlineInputBorder(),
+            hintText: 'e.g. Entertainment',
           ),
-          textCapitalization: TextCapitalization.words,
         ),
         actions: [
           TextButton(
@@ -211,14 +175,13 @@ class CategoryPage extends StatelessWidget {
           ),
           ElevatedButton(
             onPressed: () {
-              final newName = controller.text.trim();
-              if (newName.isNotEmpty && newName != oldCategory) {
-                provider.editCategory(oldCategory, newName);
-                Navigator.pop(context);
+              if (controller.text.isNotEmpty) {
+                provider.editCategory(
+                    provider.selectedCategory, controller.text);
                 Navigator.pop(context);
               }
             },
-            child: const Text('Rename'),
+            child: const Text('Save'),
           ),
         ],
       ),

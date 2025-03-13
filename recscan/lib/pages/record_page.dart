@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:recscan/widgets/overview/overview_transaction_card.dart';
 import 'create_record_page.dart';
+import 'package:provider/provider.dart';
+import 'category_provider.dart';
+import '../models/models.dart' as models;
 
 class ReportPage extends StatefulWidget {
   const ReportPage({super.key});
@@ -11,77 +14,79 @@ class ReportPage extends StatefulWidget {
 
 class _ReportPageState extends State<ReportPage> {
   // List of existing "Reports" that user created
-  final List<ReportModel> _reports = [];
-
-  // Hardcoded list of receipts (replace with your real data fetching)
-  final List<ReceiptModel> _allReceipts = [
-    ReceiptModel(
-      id: 1001,
-      restaurantName: 'KAYU RESTAURANT',
-      dateTime: DateTime(2025, 3, 19, 16, 32),
-      total: 100.00,
-    ),
-    ReceiptModel(
-      id: 1002,
-      restaurantName: 'City Utility',
-      dateTime: DateTime(2025, 4, 2, 10, 0),
-      total: 60.0,
-    ),
-    ReceiptModel(
-      id: 1003,
-      restaurantName: 'Groceries Store',
-      dateTime: DateTime(2025, 5, 1, 18, 15),
-      total: 75.50,
-    ),
-  ];
+  final List<models.ReportModel> _reports = [];
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      // Simple AppBar with back button
-      appBar: AppBar(
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
-          onPressed: () => Navigator.pop(context),
-        ),
-        title: const Text('Report'),
-      ),
-      body: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          children: [
-            // Create New Report button
-            ElevatedButton(
-              onPressed: _onCreateNewReport,
-              child: const Text('Create New Report'),
-            ),
-            const SizedBox(height: 16),
+    return Consumer<CategoryProvider>(
+      builder: (context, provider, child) {
+        final allTransactions = provider.restaurantCards;
 
-            // If no reports, show placeholder
-            if (_reports.isEmpty)
-              const Text(
-                'No reports yet. Tap "Create New Report" to get started.',
-                style: TextStyle(fontSize: 16, color: Colors.grey),
-              )
-            else
-              // Otherwise, list them
-              Expanded(
-                child: ListView.builder(
-                  itemCount: _reports.length,
-                  itemBuilder: (context, index) {
-                    final report = _reports[index];
-                    return _buildReportTile(report);
-                  },
-                ),
+        return Scaffold(
+          appBar: AppBar(
+            title: const Text('Reports'),
+            actions: [
+              IconButton(
+                icon: const Icon(Icons.add),
+                onPressed: () => _onCreateNewReport(context, allTransactions),
+                tooltip: 'Create New Report',
               ),
-          ],
-        ),
-      ),
+            ],
+          ),
+          body: Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Column(
+              children: [
+                // Reports List
+                if (_reports.isEmpty)
+                  Expanded(
+                    child: Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            Icons.receipt_long,
+                            size: 64,
+                            color: Colors.grey[400],
+                          ),
+                          const SizedBox(height: 16),
+                          Text(
+                            'No reports yet',
+                            style: TextStyle(
+                              fontSize: 16,
+                              color: Colors.grey[600],
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          ElevatedButton(
+                            onPressed: () =>
+                                _onCreateNewReport(context, allTransactions),
+                            child: const Text('Create New Report'),
+                          ),
+                        ],
+                      ),
+                    ),
+                  )
+                else
+                  Expanded(
+                    child: ListView.builder(
+                      itemCount: _reports.length,
+                      itemBuilder: (context, index) {
+                        final report = _reports[index];
+                        return _buildReportTile(report);
+                      },
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 
   /// Build one card for each report with an ExpansionTile
-  Widget _buildReportTile(ReportModel report) {
+  Widget _buildReportTile(models.ReportModel report) {
     return Card(
       margin: const EdgeInsets.symmetric(vertical: 8),
       child: ExpansionTile(
@@ -95,10 +100,16 @@ class _ReportPageState extends State<ReportPage> {
         ),
         children: [
           // Show each receipt that belongs to this report
-          ...report.receipts.map((r) {
+          ...report.receipts.map((receipt) {
             return ListTile(
-              title: Text(r.restaurantName),
-              trailing: Text('RM${r.total.toStringAsFixed(2)}'),
+              title: Text(receipt.restaurantName),
+              subtitle: Text(
+                '${receipt.dateTime.day}/${receipt.dateTime.month}/${receipt.dateTime.year}',
+              ),
+              trailing: Text('RM${receipt.total.toStringAsFixed(2)}'),
+              onTap: () {
+                // TODO: Show receipt details
+              },
             );
           }),
 
@@ -111,18 +122,18 @@ class _ReportPageState extends State<ReportPage> {
             children: [
               ElevatedButton.icon(
                 onPressed: () => _exportExcel(report),
-                icon: const Icon(Icons.grid_on), // or any icon you prefer
-                label: const Text('Excel file'),
+                icon: const Icon(Icons.grid_on),
+                label: const Text('Excel'),
               ),
               ElevatedButton.icon(
                 onPressed: () => _exportPDF(report),
                 icon: const Icon(Icons.picture_as_pdf),
-                label: const Text('PDF file'),
+                label: const Text('PDF'),
               ),
               ElevatedButton.icon(
                 onPressed: () => _exportCSV(report),
                 icon: const Icon(Icons.table_chart),
-                label: const Text('CSV file'),
+                label: const Text('CSV'),
               ),
             ],
           ),
@@ -134,12 +145,22 @@ class _ReportPageState extends State<ReportPage> {
   }
 
   /// Called when user taps "Create New Report"
-  Future<void> _onCreateNewReport() async {
+  Future<void> _onCreateNewReport(BuildContext context,
+      List<models.RestaurantCardModel> allTransactions) async {
     // Push a new page where user can pick receipts
-    final newReport = await Navigator.push<ReportModel>(
+    final newReport = await Navigator.push<models.ReportModel>(
       context,
       MaterialPageRoute(
-        builder: (context) => CreateReportPage(allReceipts: _allReceipts),
+        builder: (context) => CreateReportPage(
+          allReceipts: allTransactions
+              .map((transaction) => models.ReceiptModel(
+                    id: transaction.id,
+                    restaurantName: transaction.restaurantName,
+                    dateTime: transaction.dateTime,
+                    total: transaction.total,
+                  ))
+              .toList(),
+        ),
       ),
     );
 
@@ -152,18 +173,21 @@ class _ReportPageState extends State<ReportPage> {
   }
 
   /// Dummy export functions
-  void _exportExcel(ReportModel report) {
-    // TODO: Implement Excel export logic
-    debugPrint('Exporting report "${report.title}" to Excel...');
+  void _exportExcel(models.ReportModel report) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Exporting report "${report.title}" to Excel...')),
+    );
   }
 
-  void _exportPDF(ReportModel report) {
-    // TODO: Implement PDF export logic
-    debugPrint('Exporting report "${report.title}" to PDF...');
+  void _exportPDF(models.ReportModel report) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Exporting report "${report.title}" to PDF...')),
+    );
   }
 
-  void _exportCSV(ReportModel report) {
-    // TODO: Implement CSV export logic
-    debugPrint('Exporting report "${report.title}" to CSV...');
+  void _exportCSV(models.ReportModel report) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Exporting report "${report.title}" to CSV...')),
+    );
   }
 }

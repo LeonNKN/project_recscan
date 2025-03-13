@@ -12,13 +12,12 @@ class SettingsPage extends StatefulWidget {
 }
 
 class _SettingsPageState extends State<SettingsPage> {
-  late final CategoryProvider _categoryProvider;
+  late CategoryProvider _categoryProvider;
 
   @override
-  void initState() {
-    super.initState();
-    final provider = Provider.of<CategoryProvider>(context);
-    _categoryProvider = Provider.of<CategoryProvider>(context, listen: false);
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _categoryProvider = Provider.of<CategoryProvider>(context);
     // Safely set the selected category
     if (_categoryProvider.categories.isNotEmpty) {
       _categoryProvider.setSelectedCategory(
@@ -26,9 +25,6 @@ class _SettingsPageState extends State<SettingsPage> {
             ? widget.settingOption
             : _categoryProvider.categories.first,
       );
-    } else {
-      // Handle the case of an empty category list if needed
-      // For now, we'll assume the provider initializes with at least one category
     }
   }
 
@@ -168,37 +164,105 @@ class _SettingsPageState extends State<SettingsPage> {
       builder: (context, provider, child) {
         return Scaffold(
           appBar: AppBar(
-            title: Text('Settings: ${provider.selectedCategory}'),
+            title: const Text('Settings'),
+            actions: [
+              IconButton(
+                icon: const Icon(Icons.add),
+                onPressed: () => _addNewCategory(context),
+                tooltip: 'Add New Category',
+              ),
+            ],
           ),
           body: ListView(
+            padding: const EdgeInsets.all(16),
             children: [
-              ExpansionTile(
-                title: Text('Select Category: ${provider.selectedCategory}'),
-                children: [
-                  // Display each category in the provider
-                  ...provider.categories.map((category) => ListTile(
-                        title: Text(category),
-                        trailing: provider.selectedCategory == category
-                            ? const Icon(Icons.check, color: Colors.green)
-                            : null,
-                        onTap: () => provider.setSelectedCategory(category),
-                        onLongPress: () => _editCategoryName(context, category),
-                      )),
-                  // Tile to add a new category
-                  ListTile(
-                    leading: const Icon(Icons.add, color: Colors.blue),
-                    title: const Text(
-                      'Add New Category',
-                      style: TextStyle(color: Colors.blue),
+              // Categories Section
+              Card(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.category, color: Colors.blue),
+                          const SizedBox(width: 8),
+                          const Text(
+                            'Categories',
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
-                    onTap: () => _addNewCategory(context),
-                  ),
-                ],
+                    const Divider(height: 1),
+                    ...provider.categories.map((category) => ListTile(
+                          leading: Icon(
+                            provider.selectedCategory == category
+                                ? Icons.check_circle
+                                : Icons.circle_outlined,
+                            color: provider.selectedCategory == category
+                                ? Colors.blue
+                                : Colors.grey,
+                          ),
+                          title: Text(category),
+                          trailing: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              IconButton(
+                                icon: const Icon(Icons.edit),
+                                onPressed: () =>
+                                    _editCategoryName(context, category),
+                                tooltip: 'Edit Category',
+                              ),
+                              if (provider.categories.length > 1)
+                                IconButton(
+                                  icon: const Icon(Icons.delete,
+                                      color: Colors.red),
+                                  onPressed: () => _showDeleteConfirmation(
+                                      context, category),
+                                  tooltip: 'Delete Category',
+                                ),
+                            ],
+                          ),
+                          onTap: () => provider.setSelectedCategory(category),
+                        )),
+                  ],
+                ),
               ),
             ],
           ),
         );
       },
+    );
+  }
+
+  void _showDeleteConfirmation(BuildContext context, String category) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete Category'),
+        content: Text('Are you sure you want to delete "$category"?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              _categoryProvider.deleteCategory(category);
+              Navigator.pop(context);
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
     );
   }
 }

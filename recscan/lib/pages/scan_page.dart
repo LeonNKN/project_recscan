@@ -6,28 +6,13 @@ import 'dart:convert';
 import 'package:recscan/pages/editable_combined_result_card_view.dart';
 import 'package:recscan/widgets/overview/overview_transaction_card.dart';
 import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
-
-void main() {
-  runApp(const MyApp());
-}
-
-class MyApp extends StatelessWidget {
-  const MyApp({super.key});
-  @override
-  Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Receipt Scanner',
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue),
-        useMaterial3: true,
-      ),
-      home: const ScanPage(),
-    );
-  }
-}
+import '../models/models.dart';
 
 class ScanPage extends StatefulWidget {
-  const ScanPage({super.key});
+  final ImageSource? initialSource;
+
+  const ScanPage({super.key, this.initialSource});
+
   @override
   _ScanPageState createState() => _ScanPageState();
 }
@@ -43,6 +28,14 @@ class _ScanPageState extends State<ScanPage> {
   bool _isProcessing = false;
   String? _error;
   String? _extractedText;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.initialSource != null) {
+      _pickImage(widget.initialSource!);
+    }
+  }
 
   @override
   void dispose() {
@@ -237,14 +230,28 @@ class _ScanPageState extends State<ScanPage> {
                   borderRadius: BorderRadius.circular(8),
                   border: Border.all(color: Colors.red[200]!),
                 ),
-                child: Row(
+                child: Column(
                   children: [
-                    const Icon(Icons.error_outline, color: Colors.red),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        _error!,
-                        style: const TextStyle(color: Colors.red),
+                    Row(
+                      children: [
+                        const Icon(Icons.error_outline, color: Colors.red),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            _error!,
+                            style: const TextStyle(color: Colors.red),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    ElevatedButton.icon(
+                      onPressed: _isProcessing ? null : _processReceipt,
+                      icon: const Icon(Icons.refresh),
+                      label: const Text('Retry'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.red[50],
+                        foregroundColor: Colors.red,
                       ),
                     ),
                   ],
@@ -264,22 +271,30 @@ class _ScanPageState extends State<ScanPage> {
                   });
                 },
                 onDone: (finalOrderItems, finalSubtotal, finalTotal,
-                    selectedCategory) {
+                    selectedCategory) async {
                   final parsedDate = DateTime.tryParse(_date) ?? DateTime.now();
                   final subtotalValue = double.tryParse(finalSubtotal) ?? 0.0;
+                  final totalValue = double.tryParse(finalTotal) ?? 0.0;
 
                   RestaurantCardModel exportedResult = RestaurantCardModel(
                     id: DateTime.now().millisecondsSinceEpoch,
                     restaurantName: _merchantName,
                     dateTime: parsedDate,
                     subtotal: subtotalValue,
-                    total: double.tryParse(finalTotal) ?? 0.0,
+                    total: totalValue,
                     category: selectedCategory,
-                    categoryColor: Colors.blue,
-                    iconColor: Colors.red,
+                    categoryColor: Colors.blue.shade100,
+                    iconColor: Colors.blue,
                     items: finalOrderItems,
                   );
-                  Navigator.pop(context, exportedResult);
+
+                  debugPrint(
+                      'Exporting result: ${exportedResult.restaurantName}, ${exportedResult.total}');
+
+                  // Pop with the result
+                  if (mounted) {
+                    Navigator.pop(context, exportedResult);
+                  }
                 },
               ),
           ],

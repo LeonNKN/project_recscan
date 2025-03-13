@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../models/models.dart';
 import 'package:recscan/widgets/overview/overview_transaction_card.dart';
 
 // If your RestaurantCardModel is defined elsewhere, import it here.

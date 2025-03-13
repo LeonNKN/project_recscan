@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../models/models.dart';
 
 // A basic model for your receipts (same as your RestaurantCardModel)
 class ReceiptModel {
@@ -30,21 +31,7 @@ class ReportModel {
   });
 }
 
-class OrderItem {
-  final String name;
-  final double price;
-  final int quantity;
-
-  OrderItem({
-    required this.name,
-    required this.price,
-    required this.quantity,
-  });
-
-  double get total => price * quantity;
-}
-
-class RestaurantCardModel {
+class TransactionCardModel {
   final int id;
   final String restaurantName;
   final DateTime dateTime;
@@ -55,7 +42,7 @@ class RestaurantCardModel {
   final Color iconColor;
   final List<OrderItem> items;
 
-  RestaurantCardModel({
+  TransactionCardModel({
     required this.id,
     required this.restaurantName,
     required this.dateTime,
@@ -69,11 +56,13 @@ class RestaurantCardModel {
 }
 
 class ExpandableRestaurantCard extends StatefulWidget {
-  final RestaurantCardModel data;
+  final TransactionCardModel data;
+  final VoidCallback? onLongPress;
 
   const ExpandableRestaurantCard({
     super.key,
     required this.data,
+    this.onLongPress,
   });
 
   @override
@@ -93,6 +82,7 @@ class _ExpandableRestaurantCardState extends State<ExpandableRestaurantCard> {
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: InkWell(
         onTap: () => setState(() => _isExpanded = !_isExpanded),
+        onLongPress: widget.onLongPress,
         borderRadius: BorderRadius.circular(12),
         child: Padding(
           padding: const EdgeInsets.all(16.0),
@@ -159,31 +149,32 @@ class _ExpandableRestaurantCardState extends State<ExpandableRestaurantCard> {
                         children: [
                           // Item name and quantity
                           Expanded(
-                            flex: 2,
+                            flex: 3,
                             child: Text(
                               '${item.quantity}x ${item.name}',
                               style: const TextStyle(fontSize: 14),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
                             ),
                           ),
+                          const SizedBox(width: 8),
                           // Price and Total
-                          Expanded(
-                            flex: 1,
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                Text(
-                                  'RM${item.price.toStringAsFixed(2)}',
-                                  style: const TextStyle(fontSize: 14),
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                'RM${item.price.toStringAsFixed(2)}',
+                                style: const TextStyle(fontSize: 14),
+                              ),
+                              const SizedBox(width: 8),
+                              Text(
+                                'RM${item.total.toStringAsFixed(2)}',
+                                style: const TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.bold,
                                 ),
-                                Text(
-                                  'RM${item.total.toStringAsFixed(2)}',
-                                  style: const TextStyle(
-                                    fontSize: 14,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                              ],
-                            ),
+                              ),
+                            ],
                           ),
                         ],
                       ),

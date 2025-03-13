@@ -1,20 +1,29 @@
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 import 'pages/home_page.dart';
 import 'pages/scan_page.dart' as scan_page; // alias to refer to ScanPage
 import 'pages/record_page.dart'; // We'll show RecordPage in nav
 import 'pages/settings_page.dart';
-import 'unwanted/transaction_page.dart'; // TransactionPage
+import 'pages/transaction_page.dart'; // TransactionPage
 import 'widgets/custom_nav_bar.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:provider/provider.dart';
 import 'pages/category_provider.dart';
 import 'pages/category_item.dart'; // CategoryItem and SubItem models
+import 'models/models.dart';
+import 'services/database_helper.dart';
 
-void main() {
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+
+  // Initialize database
+  final dbService = DatabaseService();
+  await dbService.database;
+
   runApp(
     ChangeNotifierProvider(
       create: (context) => CategoryProvider(),
-      child: MyApp(),
+      child: const MyApp(),
     ),
   );
 }
@@ -25,9 +34,16 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Floating Navigation Bar',
-      theme: ThemeData(primarySwatch: Colors.purple),
-      home: MainPage(),
+      title: 'RecScan',
+      debugShowCheckedModeBanner: false,
+      theme: ThemeData(
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: Colors.purple,
+          brightness: Brightness.light,
+        ),
+        useMaterial3: true,
+      ),
+      home: const MainPage(),
     );
   }
 }
@@ -108,44 +124,61 @@ class _MainPageState extends State<MainPage> {
     return true;
   }
 
-  /// If you want to open ScanPage from the center FAB:
-  void _onFloatingActionButtonTapped() async {
-    final result = await Navigator.push(
-      context,
-      MaterialPageRoute(builder: (context) => scan_page.ScanPage()),
-    );
-    if (result != null && result is CategoryItem) {
-      Provider.of<CategoryProvider>(context, listen: false)
-          .addCategory(result.category);
+  /// Open the scan page with a specific image source
+  Future<void> _openScanPage(BuildContext context, ImageSource source) async {
+    try {
+      // Get the provider before navigating
+      final provider = Provider.of<CategoryProvider>(context, listen: false);
+
+      final result = await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => scan_page.ScanPage(initialSource: source),
+        ),
+      );
+
+      if (result != null && result is RestaurantCardModel) {
+        // Add the card to the provider
+        await provider.addRestaurantCard(result);
+
+        // After scanning, go back to the home page
+        if (mounted) {
+          setState(() {
+            _selectedIndex = 0;
+          });
+        }
+      }
+    } catch (e) {
+      debugPrint('Error in _openScanPage: $e');
+      // Show error to user
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error saving receipt: ${e.toString()}'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     }
-    // After scanning, go back to the home page.
-    setState(() {
-      _selectedIndex = 0;
-    });
   }
 
   /// This is called from CustomNavBarWithCenterFAB when a bottom item is tapped
   void _onItemTapped(int index) {
-    // If the user tapped the camera or gallery FAB (indexes 5 or 6),
-    // handle them as special actions (NOT pages in _pages).
     switch (index) {
       case 2:
         // index 2 => the main center FAB in the nav bar
-        // This is toggled inside CustomNavBarWithCenterFAB, so do nothing here.
+        // Open the scan page with a choice dialog
+        _showScanOptionsDialog(context);
         break;
 
       case 5:
-        // Extra FAB #1 => e.g. open camera
-        // Or do something else:
-        debugPrint("Camera FAB tapped!");
-        // If you want to open the scanning page:
-        _onFloatingActionButtonTapped();
+        // Extra FAB #1 => open camera directly
+        _openScanPage(context, ImageSource.camera);
         break;
 
       case 6:
-        // Extra FAB #2 => e.g. open gallery
-        debugPrint("Gallery FAB tapped!");
-        // Implement your own logic here...
+        // Extra FAB #2 => open gallery directly
+        _openScanPage(context, ImageSource.gallery);
         break;
 
       default:
@@ -155,6 +188,60 @@ class _MainPageState extends State<MainPage> {
         });
         break;
     }
+  }
+
+  void _showScanOptionsDialog(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      builder: (context) => Container(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text(
+              'Scan Receipt',
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 16),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: [
+                Expanded(
+                  child: ElevatedButton.icon(
+                    onPressed: () {
+                      Navigator.pop(context);
+                      _openScanPage(context, ImageSource.camera);
+                    },
+                    icon: const Icon(Icons.camera_alt),
+                    label: const Text('Camera'),
+                    style: ElevatedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: ElevatedButton.icon(
+                    onPressed: () {
+                      Navigator.pop(context);
+                      _openScanPage(context, ImageSource.gallery);
+                    },
+                    icon: const Icon(Icons.photo_library),
+                    label: const Text('Gallery'),
+                    style: ElevatedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   @override
@@ -181,6 +268,7 @@ class _MainPageState extends State<MainPage> {
       bottomNavigationBar: CustomNavBarWithCenterFAB(
         selectedIndex: _selectedIndex,
         onItemTapped: _onItemTapped,
+        onScanTap: () => _showScanOptionsDialog(context),
       ),
     );
   }

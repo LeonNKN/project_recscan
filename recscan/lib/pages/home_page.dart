@@ -6,6 +6,7 @@ import 'package:recscan/widgets/overview/overview_header.dart';
 import 'package:recscan/widgets/overview/overview_transaction_card.dart';
 import 'search_page.dart';
 import 'categorypage.dart';
+import '../models/models.dart' as models;
 
 class HomePage extends StatelessWidget {
   const HomePage({super.key});
@@ -103,7 +104,8 @@ class HomePage extends StatelessWidget {
 
               // Recent Transactions
               Padding(
-                padding: const EdgeInsets.all(16),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 8, vertical: 16),
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
@@ -157,17 +159,26 @@ class HomePage extends StatelessWidget {
                         itemCount: allCards.length,
                         padding: const EdgeInsets.symmetric(horizontal: 8),
                         itemBuilder: (context, index) {
+                          final card = allCards[index];
                           return ExpandableRestaurantCard(
-                            data: allCards[index],
+                            data: TransactionCardModel(
+                              id: card.id,
+                              restaurantName: card.restaurantName,
+                              dateTime: card.dateTime,
+                              subtotal: card.subtotal,
+                              total: card.total,
+                              category: card.category,
+                              categoryColor: card.categoryColor,
+                              iconColor: card.iconColor,
+                              items: card.items,
+                            ),
+                            onLongPress: () =>
+                                _showEditTransactionDialog(context, card),
                           );
                         },
                       ),
               ),
             ],
-          ),
-          floatingActionButton: FloatingActionButton(
-            onPressed: () => _openScanPage(context),
-            child: const Icon(Icons.camera_alt),
           ),
         );
       },
@@ -179,13 +190,14 @@ class HomePage extends StatelessWidget {
       context,
       MaterialPageRoute(builder: (context) => scan_page.ScanPage()),
     );
-    if (result != null && result is RestaurantCardModel) {
+    if (result != null && result is models.RestaurantCardModel) {
       Provider.of<CategoryProvider>(context, listen: false)
           .addRestaurantCard(result);
     }
   }
 
-  void _openSearchPage(BuildContext context, List<RestaurantCardModel> cards) {
+  void _openSearchPage(
+      BuildContext context, List<models.RestaurantCardModel> cards) {
     Navigator.push(
       context,
       MaterialPageRoute(
@@ -199,6 +211,91 @@ class HomePage extends StatelessWidget {
       context,
       MaterialPageRoute(
         builder: (context) => const CategoryPage(),
+      ),
+    );
+  }
+
+  void _showEditTransactionDialog(
+      BuildContext context, models.RestaurantCardModel card) {
+    final nameController = TextEditingController(text: card.restaurantName);
+    String selectedCategory = card.category;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (context) => Consumer<CategoryProvider>(
+        builder: (context, provider, child) {
+          return Padding(
+            padding: EdgeInsets.only(
+              bottom: MediaQuery.of(context).viewInsets.bottom,
+            ),
+            child: Container(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Edit Transaction',
+                    style: TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  TextField(
+                    decoration: const InputDecoration(
+                      labelText: 'Restaurant Name',
+                      border: OutlineInputBorder(),
+                    ),
+                    controller: nameController,
+                  ),
+                  const SizedBox(height: 16),
+                  DropdownButtonFormField<String>(
+                    decoration: const InputDecoration(
+                      labelText: 'Category',
+                      border: OutlineInputBorder(),
+                    ),
+                    value: selectedCategory,
+                    items: provider.categories.map((category) {
+                      return DropdownMenuItem(
+                        value: category,
+                        child: Text(category),
+                      );
+                    }).toList(),
+                    onChanged: (value) {
+                      if (value != null) {
+                        selectedCategory = value;
+                      }
+                    },
+                  ),
+                  const SizedBox(height: 16),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(context),
+                        child: const Text('Cancel'),
+                      ),
+                      const SizedBox(width: 8),
+                      ElevatedButton(
+                        onPressed: () {
+                          // Update the transaction details
+                          provider.updateTransactionName(
+                              card.id, nameController.text);
+                          provider.updateTransactionCategory(
+                              card.id, selectedCategory);
+                          Navigator.pop(context);
+                        },
+                        child: const Text('Save'),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
       ),
     );
   }

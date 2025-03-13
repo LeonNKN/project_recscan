@@ -1,35 +1,123 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.middleware.gzip import GZipMiddleware
 import logging
 import ollama
 import json
 from pydantic import BaseModel
 from functools import lru_cache
+import os
+from dotenv import load_dotenv
+import time
+
+# Load environment variables
+load_dotenv()
 
 # Configure logging
-logging.basicConfig(level=logging.DEBUG)
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
 logger = logging.getLogger(__name__)
 
-app = FastAPI()
+# Environment configuration
+ENV = os.getenv('ENV', 'local')  # Default to local if not set
+OLLAMA_HOST = os.getenv('OLLAMA_HOST', 'http://localhost:11434')
+API_TIMEOUT = int(os.getenv('API_TIMEOUT', '30'))
+ENABLE_CACHE = os.getenv('ENABLE_CACHE', 'true').lower() == 'true'
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+app = FastAPI(
+    title="Receipt Scanner API",
+    description="API for analyzing receipt text using Ollama",
+    version="1.0.0"
 )
+
+# Add GZip compression
+app.add_middleware(GZipMiddleware, minimum_size=1000)
+
+# Configure CORS based on environment
+if ENV == 'production':
+    # Production CORS settings (more restrictive)
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["https://your-production-domain.com"],  # Replace with your domain
+        allow_credentials=True,
+        allow_methods=["GET", "POST"],
+        allow_headers=["Content-Type", "Authorization"],
+    )
+else:
+    # Local development CORS settings (more permissive)
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
 class ReceiptRequest(BaseModel):
     text: str
 
-# Cache the model responses for similar receipts
-@lru_cache(maxsize=100)
-def analyze_receipt_text(text: str):
+@app.middleware("http")
+async def add_process_time_header(request: Request, call_next):
+    start_time = time.time()
+    response = await call_next(request)
+    process_time = time.time() - start_time
+    response.headers["X-Process-Time"] = str(process_time)
+    return response
+
+@app.get("/health")
+async def health_check():
+    """Health check endpoint"""
     try:
+        # Test Ollama connection with timeout
         response = ollama.chat(
-            model='mistral',  # Using a smaller, faster model
+            model='mistral',
+            messages=[{'role': 'user', 'content': 'test'}],
+            options={
+                'num_thread': 1,
+                'timeout': 5  # 5 second timeout
+            }
+        )
+        return {
+            "status": "healthy",
+            "ollama": "connected",
+            "environment": ENV,
+            "ollama_host": OLLAMA_HOST,
+            "timestamp": time.time()
+        }
+    except Exception as e:
+        logger.error(f"Health check failed: {str(e)}")
+        raise HTTPException(
+            status_code=503,
+            detail=f"Service unhealthy: {str(e)}"
+        )
+
+# Cache the model responses for similar receipts (only if enabled)
+if ENABLE_CACHE:
+    @lru_cache(maxsize=100)
+    def analyze_receipt_text(text: str):
+        return _analyze_receipt_text_internal(text)
+else:
+    def analyze_receipt_text(text: str):
+        return _analyze_receipt_text_internal(text)
+
+def _analyze_receipt_text_internal(text: str):
+    try:
+        # Configure options based on environment
+        options = {
+            'num_gpu': 0 if ENV == 'production' else 1,  # Disable GPU in production
+            'num_thread': 4 if ENV == 'production' else 8,  # Reduce threads in production
+            'temperature': 0.1,
+            'top_p': 0.9,
+            'repeat_penalty': 1.1,
+            'timeout': API_TIMEOUT
+        }
+        
+        # Add timeout to the request
+        response = ollama.chat(
+            model='mistral',
             messages=[
                 {'role': 'system', 'content': '''You are a receipt analyzer that extracts structured data from receipt text. 
                     Always respond with valid JSON only. Focus on actual items purchased, not tax or subtotal entries.
@@ -75,13 +163,7 @@ def analyze_receipt_text(text: str):
                     {text}
                 '''}
             ],
-            options={
-                'num_gpu': 1,
-                'num_thread': 8,
-                'temperature': 0.1,
-                'top_p': 0.9,
-                'repeat_penalty': 1.1
-            }
+            options=options
         )
         return response
     except Exception as e:
@@ -92,7 +174,7 @@ def analyze_receipt_text(text: str):
 async def analyze_receipt(request: ReceiptRequest):
     try:
         receipt_text = request.text.strip()
-        logger.info(f"Received text to analyze: {receipt_text[:100]}...")  # Log first 100 chars
+        logger.info(f"Received text to analyze: {receipt_text[:100]}...")
         
         if not receipt_text:
             return JSONResponse(

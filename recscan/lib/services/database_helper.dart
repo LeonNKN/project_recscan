@@ -2,13 +2,18 @@ import 'dart:io';
 import 'package:path/path.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:sqflite/sqflite.dart';
+import 'package:flutter/foundation.dart';
 
 class DatabaseService {
-  static final DatabaseService _instance = DatabaseService._internal();
-  factory DatabaseService() => _instance;
-  DatabaseService._internal();
-
+  static DatabaseService? _instance;
   static Database? _database;
+
+  factory DatabaseService() {
+    _instance ??= DatabaseService._internal();
+    return _instance!;
+  }
+
+  DatabaseService._internal();
 
   Future<Database> get database async {
     if (_database != null) return _database!;
@@ -47,6 +52,7 @@ class DatabaseService {
         category_id INTEGER,
         restaurant_name TEXT,
         date_time TEXT,
+        subtotal REAL,
         total REAL,
         FOREIGN KEY (category_id) REFERENCES Category(id)
       )
@@ -63,6 +69,26 @@ class DatabaseService {
         FOREIGN KEY (transaction_id) REFERENCES "Transaction"(id)
       )
     ''');
+
+    // Initialize default categories
+    await _initializeDefaultCategories(db);
+  }
+
+  Future<void> _initializeDefaultCategories(Database db) async {
+    final defaultCategories = [
+      {
+        'name': 'Food & Beverage',
+        'color': '0xFF2196F3',
+        'icon_color': '0xFFE91E63'
+      },
+      {'name': 'Groceries', 'color': '0xFF4CAF50', 'icon_color': '0xFFE91E63'},
+      {'name': 'Shopping', 'color': '0xFFFFC107', 'icon_color': '0xFFE91E63'},
+      {'name': 'Others', 'color': '0xFF9E9E9E', 'icon_color': '0xFFE91E63'},
+    ];
+
+    for (final category in defaultCategories) {
+      await db.insert('Category', category);
+    }
   }
 
   // If you need migrations, define _onUpgrade:
@@ -72,13 +98,9 @@ class DatabaseService {
   //   }
   // }
 
-// Example usage
-  final dbService = DatabaseService();
-
-// Insert a category
   Future<void> insertCategory(
       String name, String color, String iconColor) async {
-    final db = await dbService.database;
+    final db = await database;
     await db.insert(
       'Category',
       {
@@ -89,26 +111,79 @@ class DatabaseService {
     );
   }
 
-// Query categories
   Future<List<Map<String, dynamic>>> getAllCategories() async {
-    final db = await dbService.database;
-    return await db.query('Category');
-  }
-
-// Example of a join query
-  Future<List<Map<String, dynamic>>> getTransactionsWithCategory() async {
-    final db = await dbService.database;
-    final result = await db.rawQuery('''
-    SELECT t.id, t.restaurant_name, t.date_time, t.total,
-           c.name as category_name, c.color as category_color
-    FROM "Transaction" t
-    JOIN Category c ON t.category_id = c.id
-    ORDER BY t.id DESC
-  ''');
+    final db = await database;
+    debugPrint('Executing categories query...');
+    final result = await db.query('Category');
+    debugPrint('Query returned ${result.length} categories');
     return result;
   }
 
-  // Close the database
+  Future<List<Map<String, dynamic>>> getTransactionsWithCategory() async {
+    final db = await database;
+    debugPrint('Executing transaction query...');
+    final result = await db.rawQuery('''
+    SELECT t.id, t.restaurant_name, t.date_time, t.subtotal, t.total,
+           c.name as category_name, c.color as category_color, c.icon_color
+    FROM "Transaction" t
+    JOIN Category c ON t.category_id = c.id
+    ORDER BY t.date_time DESC
+  ''');
+    debugPrint('Query returned ${result.length} transactions');
+    return result;
+  }
+
+  Future<int> insertTransaction({
+    required int categoryId,
+    required String restaurantName,
+    required DateTime dateTime,
+    required double subtotal,
+    required double total,
+  }) async {
+    final db = await database;
+    return await db.insert(
+      'Transaction',
+      {
+        'category_id': categoryId,
+        'restaurant_name': restaurantName,
+        'date_time': dateTime.toIso8601String(),
+        'subtotal': subtotal,
+        'total': total,
+      },
+    );
+  }
+
+  Future<void> insertOrderItem({
+    required int transactionId,
+    required String name,
+    required double price,
+    required int quantity,
+  }) async {
+    final db = await database;
+    await db.insert(
+      'OrderItem',
+      {
+        'transaction_id': transactionId,
+        'name': name,
+        'price': price,
+        'quantity': quantity,
+      },
+    );
+  }
+
+  Future<List<Map<String, dynamic>>> getOrderItemsForTransaction(
+      int transactionId) async {
+    final db = await database;
+    debugPrint('Getting order items for transaction $transactionId');
+    final result = await db.query(
+      'OrderItem',
+      where: 'transaction_id = ?',
+      whereArgs: [transactionId],
+    );
+    debugPrint('Found ${result.length} order items');
+    return result;
+  }
+
   Future close() async {
     final db = await database;
     db.close();

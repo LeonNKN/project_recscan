@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../models/models.dart';
 import 'package:recscan/widgets/overview/overview_transaction_card.dart';
 import 'package:provider/provider.dart';
 import 'package:recscan/pages/category_provider.dart';
@@ -46,6 +47,17 @@ class _EditableCombinedResultCardViewState
         .toList();
     _subtotalController = TextEditingController(text: widget.subtotal);
     _totalController = TextEditingController(text: widget.total);
+
+    // Set the default category to the first category from the provider
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final categories =
+          Provider.of<CategoryProvider>(context, listen: false).categories;
+      if (categories.isNotEmpty) {
+        setState(() {
+          _selectedCategory = categories.first;
+        });
+      }
+    });
   }
 
   @override
@@ -120,17 +132,54 @@ class _EditableCombinedResultCardViewState
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Select Category'),
-        content: SingleChildScrollView(
+        content: SizedBox(
+          width: double.maxFinite,
           child: Column(
             mainAxisSize: MainAxisSize.min,
-            children: categories
-                .map((category) => ListTile(
+            children: [
+              // Search field for categories
+              TextField(
+                decoration: const InputDecoration(
+                  hintText: 'Search categories...',
+                  prefixIcon: Icon(Icons.search),
+                  border: OutlineInputBorder(),
+                ),
+                onChanged: (value) {
+                  // TODO: Implement category search
+                },
+              ),
+              const SizedBox(height: 16),
+              // Category list
+              Flexible(
+                child: ListView.builder(
+                  shrinkWrap: true,
+                  itemCount: categories.length,
+                  itemBuilder: (context, index) {
+                    final category = categories[index];
+                    return ListTile(
+                      leading: Icon(
+                        _selectedCategory == category
+                            ? Icons.check_circle
+                            : Icons.circle_outlined,
+                        color: _selectedCategory == category
+                            ? Colors.blue
+                            : Colors.grey,
+                      ),
                       title: Text(category),
                       onTap: () => Navigator.pop(context, category),
-                    ))
-                .toList(),
+                    );
+                  },
+                ),
+              ),
+            ],
           ),
         ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+        ],
       ),
     );
 

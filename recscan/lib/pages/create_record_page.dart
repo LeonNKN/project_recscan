@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:recscan/widgets/overview/overview_transaction_card.dart';
+import '../models/models.dart';
 
 class CreateReportPage extends StatefulWidget {
   final List<ReceiptModel> allReceipts;
@@ -34,40 +34,43 @@ class _CreateReportPageState extends State<CreateReportPage> {
             ),
           ),
 
-          // 2) A list of all receipts that can be selected
+          // 2) List of receipts to select from
           Expanded(
             child: ListView.builder(
               itemCount: widget.allReceipts.length,
               itemBuilder: (context, index) {
                 final receipt = widget.allReceipts[index];
                 final isSelected = _selectedIds.contains(receipt.id);
+
                 return ListTile(
-                  onTap: () {
-                    setState(() {
-                      isSelected
-                          ? _selectedIds.remove(receipt.id)
-                          : _selectedIds.add(receipt.id);
-                    });
-                  },
-                  leading: Icon(
-                    isSelected
-                        ? Icons.check_box
-                        : Icons.check_box_outline_blank,
-                    color: isSelected ? Colors.blue : null,
-                  ),
                   title: Text(receipt.restaurantName),
-                  subtitle: Text('RM${receipt.total.toStringAsFixed(2)}'),
+                  subtitle: Text(
+                    '${receipt.dateTime.day}/${receipt.dateTime.month}/${receipt.dateTime.year}',
+                  ),
+                  trailing: Text('RM${receipt.total.toStringAsFixed(2)}'),
+                  leading: Checkbox(
+                    value: isSelected,
+                    onChanged: (bool? value) {
+                      setState(() {
+                        if (value == true) {
+                          _selectedIds.add(receipt.id);
+                        } else {
+                          _selectedIds.remove(receipt.id);
+                        }
+                      });
+                    },
+                  ),
                 );
               },
             ),
           ),
 
-          // 3) "Save" button
+          // 3) Save button
           Padding(
-            padding: const EdgeInsets.symmetric(vertical: 16.0),
+            padding: const EdgeInsets.all(16.0),
             child: ElevatedButton(
-              onPressed: _onSave,
-              child: const Text('Save Report'),
+              onPressed: _selectedIds.isEmpty ? null : _saveReport,
+              child: const Text('Create Report'),
             ),
           ),
         ],
@@ -75,27 +78,13 @@ class _CreateReportPageState extends State<CreateReportPage> {
     );
   }
 
-  void _onSave() {
-    // If nothing is selected, or no title is given, you could handle that here
-    if (_selectedIds.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please select at least one receipt.')),
-      );
-      return;
-    }
-    if (_titleController.text.trim().isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please enter a report title.')),
-      );
-      return;
-    }
-
+  void _saveReport() {
     // Build a new ReportModel
     final selectedReceipts =
         widget.allReceipts.where((r) => _selectedIds.contains(r.id)).toList();
 
     final newReport = ReportModel(
-      id: DateTime.now().millisecondsSinceEpoch, // or use a real ID generator
+      id: DateTime.now().millisecondsSinceEpoch,
       title: _titleController.text.trim(),
       receipts: selectedReceipts,
     );
