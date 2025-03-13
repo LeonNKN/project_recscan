@@ -22,9 +22,8 @@ EXPOSE 8000
 
 # Set environment variables
 ENV ENV=production
-ENV OLLAMA_HOST=http://localhost:11434
 ENV API_TIMEOUT=30
 ENV ENABLE_CACHE=true
 
-# Start the application
-CMD ["uvicorn", "detect_api:app", "--host", "0.0.0.0", "--port", "8000"] 
+# Start the application with optimized settings
+CMD ["uvicorn", "detect_api:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1", "--timeout-keep-alive", "75"] 

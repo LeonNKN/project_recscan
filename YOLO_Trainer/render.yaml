@@ -7,7 +7,7 @@ services:
       - key: ENV
         value: production
       - key: OLLAMA_HOST
-        value: http://localhost:11434
+        value: https://5959-161-142-237-109.ngrok-free.app
       - key: API_TIMEOUT
         value: 30
       - key: ENABLE_CACHE
