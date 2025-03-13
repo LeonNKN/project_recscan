@@ -2,6 +2,7 @@ services:
   - type: web
     name: receipt-scanner-api
     env: docker
+    rootDir: YOLO_Trainer
     dockerfilePath: ./Dockerfile
     envVars:
       - key: ENV
