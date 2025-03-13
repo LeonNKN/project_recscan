@@ -1,12 +1,9 @@
 services:
   - type: web
     name: recscan
-    env: flutter
-    buildCommand: flutter build web
-    startCommand: flutter run -d web-server --web-port $PORT
+    env: docker
+    dockerfilePath: ./Dockerfile
     envVars:
-      - key: FLUTTER_WEB_PORT
-        value: $PORT
       - key: ENV
         value: production
     healthCheckPath: /
