@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 
 # Environment configuration
 ENV = os.getenv('ENV', 'production')  # Default to production for Vercel
-OLLAMA_HOST = os.getenv('OLLAMA_HOST', 'http://localhost:11434')
+OLLAMA_HOST = os.getenv('OLLAMA_HOST', 'https://d7f1-161-142-237-109.ngrok-free.app')
 API_TIMEOUT = int(os.getenv('API_TIMEOUT', '30'))
 ENABLE_CACHE = os.getenv('ENABLE_CACHE', 'true').lower() == 'true'
 PORT = int(os.getenv('PORT', '3000'))  # Vercel uses port 3000 by default
