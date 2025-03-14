@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 
 # Environment configuration
 ENV = os.getenv('ENV', 'production')  # Default to production for Vercel
-OLLAMA_HOST = os.getenv('OLLAMA_HOST', 'https://1e9b-161-142-237-109.ngrok-free.app')
+OLLAMA_HOST = os.getenv('OLLAMA_HOST', 'https://ollama:ollama123456@[NEW-NGROK-URL]')  # Replace with new ngrok URL
 API_TIMEOUT = int(os.getenv('API_TIMEOUT', '30'))
 ENABLE_CACHE = os.getenv('ENABLE_CACHE', 'true').lower() == 'true'
 PORT = int(os.getenv('PORT', '3000'))  # Vercel uses port 3000 by default
@@ -97,18 +97,31 @@ async def health_check():
 async def ollama_status():
     """Check Ollama connection status"""
     try:
+        logger.info(f"Attempting to connect to Ollama at: {OLLAMA_HOST}")
         # Test Ollama connection with a simple model list check
         response = ollama.list()
+        logger.info(f"Successfully connected to Ollama. Response: {response}")
         return {
             "status": "connected",
             "ollama_version": "available",
-            "ollama_host": OLLAMA_HOST
+            "ollama_host": OLLAMA_HOST,
+            "models": response
         }
     except Exception as e:
-        logger.error(f"Ollama connection failed: {str(e)}")
+        error_msg = str(e)
+        logger.error(f"Ollama connection failed to {OLLAMA_HOST}. Error: {error_msg}")
+        # Check if it's a connection error
+        if "connection" in error_msg.lower():
+            status_detail = "Connection refused or timed out"
+        elif "forbidden" in error_msg.lower():
+            status_detail = "Access forbidden - check authentication"
+        else:
+            status_detail = "Unknown error"
+            
         return {
             "status": "disconnected",
-            "error": str(e),
+            "error": error_msg,
+            "error_type": status_detail,
             "ollama_host": OLLAMA_HOST
         }
 

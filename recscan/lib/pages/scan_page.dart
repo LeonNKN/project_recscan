@@ -94,10 +94,15 @@ class _ScanPageState extends State<ScanPage> {
       setState(() => _extractedText = extractedText);
 
       // Send extracted text to API
-      final uri = Uri.parse('http://192.168.68.104:8000/analyze-receipt');
+      final uri = Uri.parse(
+          'https://project-recscan-2dwj.onrender.com/analyze-receipt');
       final response = await http.post(
         uri,
-        headers: {'Content-Type': 'application/json'},
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization':
+              'Basic ${base64Encode(utf8.encode('ollama:ollama123456'))}'
+        },
         body: json.encode({'text': extractedText}),
       );
 
