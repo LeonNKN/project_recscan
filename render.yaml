@@ -15,9 +15,14 @@ services:
         value: true
       - key: PORT
         value: 8000
-    healthCheckPath: /health
+    healthCheckPath: /check
     autoDeploy: true
     plan: free
+    scaling:
+      minInstances: 0
+      maxInstances: 1
+      targetMemoryPercent: 80
+    startCommand: python YOLO_Trainer/detect_api.py
     disk:
       name: data
       mountPath: /data
