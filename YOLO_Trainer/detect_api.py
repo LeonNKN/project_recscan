@@ -27,6 +27,9 @@ OLLAMA_HOST = os.getenv('OLLAMA_HOST', 'http://localhost:11434')
 API_TIMEOUT = int(os.getenv('API_TIMEOUT', '30'))
 ENABLE_CACHE = os.getenv('ENABLE_CACHE', 'true').lower() == 'true'
 
+# Configure Ollama client
+ollama.host = OLLAMA_HOST
+
 app = FastAPI(
     title="Receipt Scanner API",
     description="API for analyzing receipt text using Ollama",
@@ -38,16 +41,16 @@ app.add_middleware(GZipMiddleware, minimum_size=1000)
 
 # Configure CORS based on environment
 if ENV == 'production':
-    # Production CORS settings (more restrictive)
+    # Production CORS settings (more permissive for testing)
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["https://your-production-domain.com"],  # Replace with your domain
+        allow_origins=["*"],  # Allow all origins in production for testing
         allow_credentials=True,
         allow_methods=["GET", "POST"],
-        allow_headers=["Content-Type", "Authorization"],
+        allow_headers=["*"],
     )
 else:
-    # Local development CORS settings (more permissive)
+    # Local development CORS settings
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["*"],
