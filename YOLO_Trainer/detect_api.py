@@ -97,11 +97,11 @@ async def health_check():
 async def ollama_status():
     """Check Ollama connection status"""
     try:
-        # Test Ollama connection with a simple version check
-        response = ollama.version()
+        # Test Ollama connection with a simple model list check
+        response = ollama.list()
         return {
             "status": "connected",
-            "ollama_version": response.get("version", "unknown"),
+            "ollama_version": "available",
             "ollama_host": OLLAMA_HOST
         }
     except Exception as e:
@@ -309,4 +309,6 @@ async def read_root():
 
 if __name__ == "__main__":
     import uvicorn
+    logger.info(f"Starting application with ENV={ENV}, PORT={PORT}")
+    logger.info(f"Ollama host configured as: {OLLAMA_HOST}")
     uvicorn.run(app, host="0.0.0.0", port=PORT)
