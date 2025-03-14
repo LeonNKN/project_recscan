@@ -76,10 +76,15 @@ async def add_process_time_header(request: Request, call_next):
 async def health_check():
     """Health check endpoint"""
     try:
+        # Check Ollama connection
+        ollama_status_check = await ollama_status()
+        
         return {
             "status": "healthy",
             "environment": ENV,
-            "timestamp": time.time()
+            "timestamp": time.time(),
+            "ollama_status": ollama_status_check["status"],
+            "ollama_version": ollama_status_check.get("ollama_version", "unknown")
         }
     except Exception as e:
         logger.error(f"Health check failed: {str(e)}")
