@@ -1,5 +1,6 @@
 import ollama
 import logging
+import httpx
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -12,6 +13,8 @@ def test_ollama_connection(host):
             "Authorization": "Bearer 2uGmHMJkSI3ppiWBn11Qxg7FFEf_4Ek5GxPVVPNuAfq3f12W1",
             "ngrok-skip-browser-warning": "true"
         }
+        # Create a new client with the headers
+        ollama._client = httpx.Client(headers=headers)
         response = ollama.list()
         logger.info(f"Successfully connected to {host}")
         logger.info(f"Available models: {response}")

@@ -37,10 +37,16 @@ headers = {
 
 # Configure Ollama client with authentication if needed
 ollama.host = OLLAMA_BASE_URL
+
+# Create a new client with the headers if they exist
 if headers:
-    # Monkey patch the ollama client's request headers
     import httpx
-    ollama._client = httpx.Client(headers=headers)
+    # Create a client with proper timeout and headers
+    ollama._client = httpx.Client(
+        headers=headers,
+        timeout=httpx.Timeout(API_TIMEOUT)
+    )
+    logger.info("Configured Ollama client with authentication headers")
 
 app = FastAPI(
     title="Receipt Scanner API",
