@@ -72,18 +72,13 @@ async def add_process_time_header(request: Request, call_next):
     response.headers["X-Process-Time"] = str(process_time)
     return response
 
-@app.get("/health")
+@app.get("/check")
 async def health_check():
     """Health check endpoint"""
     try:
-        # Test Ollama connection with a simple version check
-        response = ollama.version()
         return {
             "status": "healthy",
-            "ollama": "connected",
-            "ollama_version": response.get("version", "unknown"),
             "environment": ENV,
-            "ollama_host": OLLAMA_HOST,
             "timestamp": time.time()
         }
     except Exception as e:
@@ -92,6 +87,25 @@ async def health_check():
             status_code=503,
             detail=f"Service unhealthy: {str(e)}"
         )
+
+@app.get("/ollama-status")
+async def ollama_status():
+    """Check Ollama connection status"""
+    try:
+        # Test Ollama connection with a simple version check
+        response = ollama.version()
+        return {
+            "status": "connected",
+            "ollama_version": response.get("version", "unknown"),
+            "ollama_host": OLLAMA_HOST
+        }
+    except Exception as e:
+        logger.error(f"Ollama connection failed: {str(e)}")
+        return {
+            "status": "disconnected",
+            "error": str(e),
+            "ollama_host": OLLAMA_HOST
+        }
 
 # Cache the model responses for similar receipts (only if enabled)
 if ENABLE_CACHE:
@@ -184,8 +198,19 @@ async def analyze_receipt(request: ReceiptRequest):
                 }
             )
             
-        # Check if Ollama is available
+        # Check if Ollama is available first
         try:
+            ollama_check = await ollama_status()
+            if ollama_check["status"] != "connected":
+                return JSONResponse(
+                    status_code=503,
+                    content={
+                        "success": False,
+                        "error": "Ollama service is not available. Please try again in a few moments.",
+                        "details": ollama_check
+                    }
+                )
+                
             response = analyze_receipt_text(receipt_text)
             logger.debug(f"Ollama response: {response}")
             
