@@ -47,6 +47,7 @@ if headers:
         timeout=httpx.Timeout(API_TIMEOUT)
     )
     logger.info("Configured Ollama client with authentication headers")
+    logger.debug(f"Using headers: {headers}")
 
 app = FastAPI(
     title="Receipt Scanner API",
