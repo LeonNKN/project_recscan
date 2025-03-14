@@ -22,11 +22,11 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Environment configuration
-ENV = os.getenv('ENV', 'local')  # Default to local if not set
+ENV = os.getenv('ENV', 'production')  # Default to production for Vercel
 OLLAMA_HOST = os.getenv('OLLAMA_HOST', 'http://localhost:11434')
 API_TIMEOUT = int(os.getenv('API_TIMEOUT', '30'))
 ENABLE_CACHE = os.getenv('ENABLE_CACHE', 'true').lower() == 'true'
-PORT = int(os.getenv('PORT', '8000'))  # Get port from environment variable
+PORT = int(os.getenv('PORT', '3000'))  # Vercel uses port 3000 by default
 
 # Configure Ollama client
 ollama.host = OLLAMA_HOST
@@ -34,7 +34,8 @@ ollama.host = OLLAMA_HOST
 app = FastAPI(
     title="Receipt Scanner API",
     description="API for analyzing receipt text using Ollama",
-    version="1.0.0"
+    version="1.0.0",
+    root_path=os.getenv('ROOT_PATH', '')  # Handle Vercel path
 )
 
 # Add GZip compression
@@ -75,18 +76,12 @@ async def add_process_time_header(request: Request, call_next):
 async def health_check():
     """Health check endpoint"""
     try:
-        # Test Ollama connection with timeout
-        response = ollama.chat(
-            model='mistral',
-            messages=[{'role': 'user', 'content': 'test'}],
-            options={
-                'num_thread': 1,
-                'timeout': 5  # 5 second timeout
-            }
-        )
+        # Test Ollama connection with a simple version check
+        response = ollama.version()
         return {
             "status": "healthy",
             "ollama": "connected",
+            "ollama_version": response.get("version", "unknown"),
             "environment": ENV,
             "ollama_host": OLLAMA_HOST,
             "timestamp": time.time()

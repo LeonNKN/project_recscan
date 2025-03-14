@@ -37,3 +37,9 @@ android/app/release/
 # Project specific
 lib/unwanted/
 recscan/assets/best.torchscript
+
+.env
+__pycache__/
+*.pyc
+.vercel
+venv/
