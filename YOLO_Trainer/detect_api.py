@@ -303,6 +303,10 @@ async def analyze_receipt(request: ReceiptRequest):
             }
         )
 
+@app.get("/")
+async def read_root():
+    return {"message": "Welcome to the Receipt Scanner API"}
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=PORT)
