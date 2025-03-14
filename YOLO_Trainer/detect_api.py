@@ -23,13 +23,24 @@ logger = logging.getLogger(__name__)
 
 # Environment configuration
 ENV = os.getenv('ENV', 'production')  # Default to production for Vercel
-OLLAMA_HOST = os.getenv('OLLAMA_HOST', 'https://ollama:ollama123456@[NEW-NGROK-URL]')  # Replace with new ngrok URL
+NGROK_AUTH_TOKEN = os.getenv('NGROK_AUTH_TOKEN')
+OLLAMA_BASE_URL = os.getenv('OLLAMA_HOST', 'http://localhost:11434')
 API_TIMEOUT = int(os.getenv('API_TIMEOUT', '30'))
 ENABLE_CACHE = os.getenv('ENABLE_CACHE', 'true').lower() == 'true'
 PORT = int(os.getenv('PORT', '3000'))  # Vercel uses port 3000 by default
 
-# Configure Ollama client
-ollama.host = OLLAMA_HOST
+# Configure headers for ngrok authentication
+headers = {
+    "Authorization": f"Bearer {NGROK_AUTH_TOKEN}",
+    "ngrok-skip-browser-warning": "true"
+} if NGROK_AUTH_TOKEN else {}
+
+# Configure Ollama client with authentication if needed
+ollama.host = OLLAMA_BASE_URL
+if headers:
+    # Monkey patch the ollama client's request headers
+    import httpx
+    ollama._client = httpx.Client(headers=headers)
 
 app = FastAPI(
     title="Receipt Scanner API",
@@ -97,19 +108,19 @@ async def health_check():
 async def ollama_status():
     """Check Ollama connection status"""
     try:
-        logger.info(f"Attempting to connect to Ollama at: {OLLAMA_HOST}")
+        logger.info(f"Attempting to connect to Ollama at: {OLLAMA_BASE_URL}")
         # Test Ollama connection with a simple model list check
         response = ollama.list()
         logger.info(f"Successfully connected to Ollama. Response: {response}")
         return {
             "status": "connected",
             "ollama_version": "available",
-            "ollama_host": OLLAMA_HOST,
+            "ollama_host": OLLAMA_BASE_URL,
             "models": response
         }
     except Exception as e:
         error_msg = str(e)
-        logger.error(f"Ollama connection failed to {OLLAMA_HOST}. Error: {error_msg}")
+        logger.error(f"Ollama connection failed to {OLLAMA_BASE_URL}. Error: {error_msg}")
         # Check if it's a connection error
         if "connection" in error_msg.lower():
             status_detail = "Connection refused or timed out"
@@ -122,7 +133,7 @@ async def ollama_status():
             "status": "disconnected",
             "error": error_msg,
             "error_type": status_detail,
-            "ollama_host": OLLAMA_HOST
+            "ollama_host": OLLAMA_BASE_URL
         }
 
 # Cache the model responses for similar receipts (only if enabled)
@@ -323,5 +334,5 @@ async def read_root():
 if __name__ == "__main__":
     import uvicorn
     logger.info(f"Starting application with ENV={ENV}, PORT={PORT}")
-    logger.info(f"Ollama host configured as: {OLLAMA_HOST}")
+    logger.info(f"Ollama host configured as: {OLLAMA_BASE_URL}")
     uvicorn.run(app, host="0.0.0.0", port=PORT)

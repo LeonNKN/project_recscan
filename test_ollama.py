@@ -8,6 +8,10 @@ def test_ollama_connection(host):
     logger.info(f"Testing Ollama connection to: {host}")
     try:
         ollama.host = host
+        headers = {
+            "Authorization": "Bearer 2uGmHMJkSI3ppiWBn11Qxg7FFEf_4Ek5GxPVVPNuAfq3f12W1",
+            "ngrok-skip-browser-warning": "true"
+        }
         response = ollama.list()
         logger.info(f"Successfully connected to {host}")
         logger.info(f"Available models: {response}")
@@ -23,7 +27,7 @@ if __name__ == "__main__":
     
     # Test remote connection
     logger.info("\n=== Testing Remote Ollama ===")
-    remote_success = test_ollama_connection("https://1e9b-161-142-237-109.ngrok-free.app")
+    remote_success = test_ollama_connection("https://5a08-161-142-237-109.ngrok-free.app")
     
     if local_success:
         logger.info("✅ Local Ollama is running correctly")

@@ -8,7 +8,9 @@ services:
       - key: ENV
         value: production
       - key: OLLAMA_HOST
-        value: https://d7f1-161-142-237-109.ngrok-free.app
+        value: https://5a08-161-142-237-109.ngrok-free.app
+      - key: NGROK_AUTH_TOKEN
+        value: 2uGmHMJkSI3ppiWBn11Qxg7FFEf_4Ek5GxPVVPNuAfq3f12W1
       - key: API_TIMEOUT
         value: 30
       - key: ENABLE_CACHE

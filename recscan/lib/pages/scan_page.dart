@@ -95,14 +95,10 @@ class _ScanPageState extends State<ScanPage> {
 
       // Send extracted text to API
       final uri = Uri.parse(
-          'https://project-recscan-2dwj.onrender.com/analyze-receipt');
+          'https://ollama:ollama123456@5a08-161-142-237-109.ngrok-free.app/analyze-receipt');
       final response = await http.post(
         uri,
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization':
-              'Basic ${base64Encode(utf8.encode('ollama:ollama123456'))}'
-        },
+        headers: {'Content-Type': 'application/json'},
         body: json.encode({'text': extractedText}),
       );
 
@@ -131,7 +127,15 @@ class _ScanPageState extends State<ScanPage> {
               _error = jsonResponse['error'] ?? 'Failed to parse receipt');
         }
       } else {
-        setState(() => _error = 'Server error: ${response.statusCode}');
+        String errorMessage = 'Server error: ${response.statusCode}';
+        if (response.statusCode == 403) {
+          errorMessage =
+              'Authentication failed: Please check the API credentials (403 Forbidden)';
+        } else if (response.statusCode == 401) {
+          errorMessage =
+              'Unauthorized: Invalid authentication credentials (401)';
+        }
+        setState(() => _error = errorMessage);
       }
     } catch (e) {
       setState(() => _error = 'Error processing receipt: $e');
