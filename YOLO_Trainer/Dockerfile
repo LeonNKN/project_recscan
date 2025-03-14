@@ -9,21 +9,18 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements first to leverage Docker cache
-COPY YOLO_Trainer/requirements.txt .
+COPY requirements.txt .
 
 # Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy the application files
-COPY YOLO_Trainer/ .
-
-# Expose the port
-EXPOSE 8000
+COPY . .
 
 # Set environment variables
 ENV ENV=production
 ENV API_TIMEOUT=30
 ENV ENABLE_CACHE=true
 
-# Start the application with optimized settings
-CMD ["uvicorn", "detect_api:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1", "--timeout-keep-alive", "75"] 
+# Start the application
+CMD uvicorn detect_api:app --host 0.0.0.0 --port ${PORT:-8000} --workers 1 

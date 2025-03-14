@@ -26,6 +26,7 @@ ENV = os.getenv('ENV', 'local')  # Default to local if not set
 OLLAMA_HOST = os.getenv('OLLAMA_HOST', 'http://localhost:11434')
 API_TIMEOUT = int(os.getenv('API_TIMEOUT', '30'))
 ENABLE_CACHE = os.getenv('ENABLE_CACHE', 'true').lower() == 'true'
+PORT = int(os.getenv('PORT', '8000'))  # Get port from environment variable
 
 # Configure Ollama client
 ollama.host = OLLAMA_HOST
@@ -276,3 +277,7 @@ async def analyze_receipt(request: ReceiptRequest):
                 "error": f"Server error: {str(e)}"
             }
         )
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=PORT)
