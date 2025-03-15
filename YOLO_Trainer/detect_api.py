@@ -30,8 +30,11 @@ logger.info("Loading environment configuration...")
 ENV = os.getenv('ENV', 'production')
 logger.info(f"Environment: {ENV}")
 
-OLLAMA_BASE_URL = os.getenv('OLLAMA_HOST', 'http://localhost:11434').strip().rstrip('/')
-logger.info(f"Final OLLAMA_BASE_URL: {OLLAMA_BASE_URL}")
+# Keep Ollama local but allow external API access
+OLLAMA_BASE_URL = 'http://localhost:11434'  # Always use local Ollama
+PUBLIC_API_URL = os.getenv('PUBLIC_URL', '')  # For documentation/testing only
+logger.info(f"Ollama URL: {OLLAMA_BASE_URL}")
+logger.info(f"Public API URL: {PUBLIC_API_URL}")
 
 ENABLE_CACHE = os.getenv('ENABLE_CACHE', 'true').lower() == 'true'
 logger.info(f"Cache enabled: {ENABLE_CACHE}")
@@ -40,43 +43,42 @@ PORT = int(os.getenv('PORT', '8000'))
 API_TIMEOUT = float(os.getenv('API_TIMEOUT', '60.0'))
 logger.info(f"Port: {PORT}, API Timeout: {API_TIMEOUT}")
 
-# Configure Ollama client with no headers initially
+# Configure Ollama client for local access
 try:
     logger.info("Configuring Ollama client...")
     client = httpx.Client(
-        timeout=httpx.Timeout(API_TIMEOUT),
-        follow_redirects=True,
-        verify=True,
+        timeout=httpx.Timeout(
+            connect=5.0,  # Connection timeout
+            read=30.0,    # Read timeout
+            write=30.0,   # Write timeout
+            pool=5.0      # Pool timeout
+        ),
+        verify=False,  # Set to False to avoid SSL verification issues
         headers={
-            'Accept': '*/*',
-            'User-Agent': 'Receipt-Scanner-API/1.0',
-            'Connection': 'keep-alive',
-            'ngrok-skip-browser-warning': 'true',
+            'Accept': 'application/json',
             'Content-Type': 'application/json'
-        }
+        },
+        http2=False,  # Disable HTTP/2 to avoid protocol issues
+        retries=3     # Enable automatic retries
     )
+    
+    # Store verify attribute explicitly
+    setattr(client, 'verify', False)
     
     logger.info("Client configuration complete")
     logger.debug(f"Client headers: {dict(client.headers)}")
     
-    # Test connection
+    # Test local connection
     test_url = f"{OLLAMA_BASE_URL}/api/tags"
-    logger.info(f"Testing connection to: {test_url}")
+    logger.info(f"Testing connection to local Ollama at: {test_url}")
     test_response = client.get(test_url)
     logger.info(f"Initial test response status: {test_response.status_code}")
-    logger.debug(f"Initial test response headers: {dict(test_response.headers)}")
-    logger.debug(f"Initial test response content: {test_response.text[:200]}...")
     
     if test_response.status_code >= 400:
-        logger.error(f"Connection test failed with status {test_response.status_code}")
-        logger.error(f"Response headers: {dict(test_response.headers)}")
+        logger.error(f"Local Ollama connection failed with status {test_response.status_code}")
         logger.error(f"Response content: {test_response.text}")
-        # Try to get more error details
-        try:
-            error_content = test_response.json()
-            logger.error(f"Error details: {error_content}")
-        except:
-            pass
+    else:
+        logger.info("Successfully connected to local Ollama")
     
     ollama.host = OLLAMA_BASE_URL
     ollama._client = client
@@ -85,6 +87,7 @@ try:
 except Exception as e:
     logger.error(f"Client setup failed with error: {str(e)}", exc_info=True)
 
+# Configure FastAPI with CORS for public access
 app = FastAPI(
     title="Receipt Scanner API",
     description="API for analyzing receipt text using Ollama",
@@ -92,24 +95,16 @@ app = FastAPI(
     root_path=os.getenv('ROOT_PATH', '')
 )
 
-app.add_middleware(GZipMiddleware, minimum_size=1000)
+# Enable CORS for all origins in production
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
-if ENV == 'production':
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=["*"],
-        allow_credentials=True,
-        allow_methods=["GET", "POST"],
-        allow_headers=["*"],
-    )
-else:
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=["*"],
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
+app.add_middleware(GZipMiddleware, minimum_size=1000)
 
 class ReceiptRequest(BaseModel):
     text: str
@@ -147,6 +142,10 @@ async def ollama_status():
         if not ollama._client:
             raise RuntimeError("Ollama client not initialized")
             
+        # Get verify attribute safely
+        verify_setting = getattr(ollama._client, 'verify', False)
+        logger.info(f"Client verify setting: {verify_setting}")
+        
         logger.info(f"Attempting to connect to Ollama at: {OLLAMA_BASE_URL}")
         
         # First try a direct GET request to check connectivity
@@ -183,9 +182,9 @@ async def ollama_status():
             "ollama_host": OLLAMA_BASE_URL,
             "models": models,
             "client_info": {
-                "headers": dict(ollama._client.headers),
-                "timeout": str(ollama._client.timeout),
-                "verify_ssl": ollama._client.verify
+                "headers": dict(ollama._client.headers) if ollama._client else {},
+                "timeout": str(ollama._client.timeout) if ollama._client else None,
+                "verify": verify_setting
             }
         }
     except httpx.HTTPStatusError as e:
@@ -198,7 +197,7 @@ async def ollama_status():
             "client_info": {
                 "headers": dict(ollama._client.headers) if ollama._client else {},
                 "timeout": str(ollama._client.timeout) if ollama._client else None,
-                "verify_ssl": ollama._client.verify if ollama._client else None
+                "verify": verify_setting
             }
         }
     except Exception as e:
@@ -211,7 +210,7 @@ async def ollama_status():
             "client_info": {
                 "headers": dict(ollama._client.headers) if ollama._client else {},
                 "timeout": str(ollama._client.timeout) if ollama._client else None,
-                "verify_ssl": ollama._client.verify if ollama._client else None
+                "verify": verify_setting
             }
         }
 
@@ -359,4 +358,13 @@ if __name__ == "__main__":
     import uvicorn
     logger.info(f"Starting application with ENV={ENV}, PORT={PORT}")
     logger.info(f"Ollama host configured as: {OLLAMA_BASE_URL}")
-    uvicorn.run(app, host="0.0.0.0", port=PORT)
+    config = uvicorn.Config(
+        app,
+        host="0.0.0.0",
+        port=PORT,
+        timeout_keep_alive=30,
+        limit_concurrency=100,
+        backlog=100
+    )
+    server = uvicorn.Server(config)
+    server.run()

@@ -280,4 +280,26 @@ class CategoryProvider with ChangeNotifier {
       notifyListeners();
     }
   }
+
+  // Delete a restaurant card
+  Future<void> deleteRestaurantCard(int cardId) async {
+    try {
+      debugPrint('Deleting restaurant card with ID: $cardId');
+
+      // Remove from database
+      await _dbService.deleteTransaction(cardId);
+      debugPrint('Deleted transaction from database');
+
+      // Remove from memory
+      _restaurantCards.removeWhere((card) => card.id == cardId);
+      debugPrint(
+          'Removed card from memory. Current count: ${_restaurantCards.length}');
+
+      // Notify listeners to update UI
+      notifyListeners();
+    } catch (e) {
+      debugPrint('Error deleting restaurant card: $e');
+      rethrow;
+    }
+  }
 }

@@ -7,6 +7,7 @@ import 'package:recscan/pages/editable_combined_result_card_view.dart';
 import 'package:recscan/widgets/overview/overview_transaction_card.dart';
 import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
 import '../models/models.dart';
+import '../config/api_config.dart';
 
 class ScanPage extends StatefulWidget {
   final ImageSource? initialSource;
@@ -93,14 +94,21 @@ class _ScanPageState extends State<ScanPage> {
 
       setState(() => _extractedText = extractedText);
 
-      // Send extracted text to API
-      final uri = Uri.parse(
-          'https://ollama:ollama123456@5a08-161-142-237-109.ngrok-free.app/analyze-receipt');
+      // Debug logging
+      debugPrint('Sending request to: ${ApiConfig.analyzeReceipt}');
+      debugPrint('Headers: ${ApiConfig.headers}');
+      debugPrint('Text length: ${extractedText.length}');
+
+      // Send extracted text to API using ApiConfig
       final response = await http.post(
-        uri,
-        headers: {'Content-Type': 'application/json'},
+        Uri.parse(ApiConfig.analyzeReceipt),
+        headers: ApiConfig.headers,
         body: json.encode({'text': extractedText}),
       );
+
+      debugPrint('Response status: ${response.statusCode}');
+      debugPrint('Response headers: ${response.headers}');
+      debugPrint('Response body: ${response.body}');
 
       if (response.statusCode == 200) {
         final jsonResponse = json.decode(response.body);
@@ -128,12 +136,11 @@ class _ScanPageState extends State<ScanPage> {
         }
       } else {
         String errorMessage = 'Server error: ${response.statusCode}';
-        if (response.statusCode == 403) {
+        if (response.statusCode == 503) {
           errorMessage =
-              'Authentication failed: Please check the API credentials (403 Forbidden)';
-        } else if (response.statusCode == 401) {
-          errorMessage =
-              'Unauthorized: Invalid authentication credentials (401)';
+              'Service unavailable: The API server is not responding';
+        } else if (response.statusCode == 404) {
+          errorMessage = 'API endpoint not found: Please check the URL';
         }
         setState(() => _error = errorMessage);
       }

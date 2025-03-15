@@ -184,6 +184,29 @@ class DatabaseService {
     return result;
   }
 
+  // Delete a transaction and its associated order items
+  Future<void> deleteTransaction(int transactionId) async {
+    final db = await database;
+    await db.transaction((txn) async {
+      debugPrint('Deleting order items for transaction $transactionId');
+      // Delete associated order items first
+      await txn.delete(
+        'OrderItem',
+        where: 'transaction_id = ?',
+        whereArgs: [transactionId],
+      );
+
+      debugPrint('Deleting transaction $transactionId');
+      // Delete the transaction
+      await txn.delete(
+        'Transaction',
+        where: 'id = ?',
+        whereArgs: [transactionId],
+      );
+    });
+    debugPrint('Transaction and associated items deleted successfully');
+  }
+
   Future close() async {
     final db = await database;
     db.close();

@@ -173,7 +173,7 @@ class HomePage extends StatelessWidget {
                               items: card.items,
                             ),
                             onLongPress: () =>
-                                _showEditTransactionDialog(context, card),
+                                _showDeleteConfirmationDialog(context, card),
                           );
                         },
                       ),
@@ -297,6 +297,51 @@ class HomePage extends StatelessWidget {
           );
         },
       ),
+    );
+  }
+
+  void _showDeleteConfirmationDialog(
+      BuildContext context, models.RestaurantCardModel card) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('Delete Transaction'),
+          content: Text(
+              'Are you sure you want to delete the transaction from ${card.restaurantName}?'),
+          actions: <Widget>[
+            TextButton(
+              child: const Text('Cancel'),
+              onPressed: () {
+                Navigator.of(context).pop();
+              },
+            ),
+            TextButton(
+              child: const Text(
+                'Delete',
+                style: TextStyle(color: Colors.red),
+              ),
+              onPressed: () {
+                Provider.of<CategoryProvider>(context, listen: false)
+                    .deleteRestaurantCard(card.id);
+                Navigator.of(context).pop();
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('Transaction deleted'),
+                    action: SnackBarAction(
+                      label: 'Undo',
+                      onPressed: () {
+                        Provider.of<CategoryProvider>(context, listen: false)
+                            .addRestaurantCard(card);
+                      },
+                    ),
+                  ),
+                );
+              },
+            ),
+          ],
+        );
+      },
     );
   }
 }
