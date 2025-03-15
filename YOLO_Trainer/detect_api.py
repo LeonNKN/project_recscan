@@ -15,65 +15,153 @@ import time
 # Load environment variables
 load_dotenv()
 
-# Configure logging
+# Configure logging with more detailed format
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    format='%(asctime)s - %(name)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s'
 )
 logger = logging.getLogger(__name__)
 
-# Environment configuration
-ENV = os.getenv('ENV', 'production')
-OLLAMA_BASE_URL = os.getenv('OLLAMA_HOST', 'http://localhost:11434').strip()
-ENABLE_CACHE = os.getenv('ENABLE_CACHE', 'true').lower() == 'true'
+# Add httpx logger for detailed HTTP logging
+httpx_logger = logging.getLogger("httpx")
+httpx_logger.setLevel(logging.DEBUG)
 
-# URL handling
+def log_request_details(request):
+    """Helper function to log request details"""
+    logger.debug(f"Request URL: {request.url}")
+    logger.debug(f"Request Method: {request.method}")
+    logger.debug(f"Request Headers: {dict(request.headers)}")
+    return request
+
+def log_response_details(response):
+    """Helper function to log response details"""
+    logger.debug(f"Response Status: {response.status_code}")
+    logger.debug(f"Response Headers: {dict(response.headers)}")
+    logger.debug(f"Response URL (after redirects): {response.url}")
+    if response.status_code >= 400:
+        logger.error(f"Error Response Body: {response.text}")
+    return response
+
+class DebugTransport(httpx.HTTPTransport):
+    """Custom transport class for detailed request/response logging"""
+    def handle_request(self, request):
+        logger.debug(f"Sending request to: {request.url}")
+        log_request_details(request)
+        response = super().handle_request(request)
+        logger.debug("Received response")
+        log_response_details(response)
+        return response
+
+# Environment configuration with detailed logging
+logger.info("Loading environment configuration...")
+ENV = os.getenv('ENV', 'production')
+logger.info(f"Environment: {ENV}")
+
+OLLAMA_BASE_URL = os.getenv('OLLAMA_HOST', 'http://localhost:11434').strip()
+logger.info(f"Initial OLLAMA_BASE_URL: {OLLAMA_BASE_URL}")
+
+ENABLE_CACHE = os.getenv('ENABLE_CACHE', 'true').lower() == 'true'
+logger.info(f"Cache enabled: {ENABLE_CACHE}")
+
+# URL handling with detailed logging
 if OLLAMA_BASE_URL.startswith('https://'):
-    logger.warning("Converting HTTPS URL to HTTP for Ollama connection")
+    logger.warning(f"Converting HTTPS URL to HTTP: {OLLAMA_BASE_URL}")
     OLLAMA_BASE_URL = 'http://' + OLLAMA_BASE_URL[8:]
+    logger.info(f"Converted URL: {OLLAMA_BASE_URL}")
 
 # Remove any trailing slashes
 OLLAMA_BASE_URL = OLLAMA_BASE_URL.rstrip('/')
+logger.info(f"Final OLLAMA_BASE_URL: {OLLAMA_BASE_URL}")
 
-logger.info(f"Starting with OLLAMA_BASE_URL: {OLLAMA_BASE_URL}")
-
-# Set logging level from environment
+# Set logging level from environment with verification
 log_level = os.getenv('LOG_LEVEL', 'INFO').upper()
-logging.getLogger().setLevel(log_level)
-logger.info(f"Log level set to: {log_level}")
-
-# Configure Ollama client with appropriate settings
 try:
-    transport = httpx.HTTPTransport(retries=3)
+    logging.getLogger().setLevel(log_level)
+    logger.info(f"Log level set to: {log_level}")
+except ValueError as e:
+    logger.error(f"Invalid log level: {log_level}. Defaulting to INFO.")
+    logging.getLogger().setLevel(logging.INFO)
+
+# Configure Ollama client with detailed logging
+try:
+    logger.info("Configuring Ollama client...")
+    transport = DebugTransport(retries=3)
+    
+    # Log timeout configuration
+    connect_timeout = float(os.getenv('CONNECT_TIMEOUT', '5.0'))
+    read_timeout = float(os.getenv('READ_TIMEOUT', '30.0'))
+    write_timeout = float(os.getenv('WRITE_TIMEOUT', '30.0'))
+    pool_timeout = float(os.getenv('POOL_TIMEOUT', '30.0'))
+    
+    logger.info(f"Timeouts - Connect: {connect_timeout}s, Read: {read_timeout}s, Write: {write_timeout}s, Pool: {pool_timeout}s")
+    
+    # Configure client with detailed logging
     client = httpx.Client(
         transport=transport,
         timeout=httpx.Timeout(
-            connect=float(os.getenv('CONNECT_TIMEOUT', '5.0')),
-            read=float(os.getenv('READ_TIMEOUT', '30.0')),
-            write=float(os.getenv('WRITE_TIMEOUT', '30.0')),
-            pool=float(os.getenv('POOL_TIMEOUT', '30.0'))  # Added pool timeout
+            connect=connect_timeout,
+            read=read_timeout,
+            write=write_timeout,
+            pool=pool_timeout
         ),
-        verify=False,  # Skip SSL verification for ngrok
-        follow_redirects=True,
+        verify=False,
+        follow_redirects=False,
         headers={
             'Accept': '*/*',
             'User-Agent': 'Receipt-Scanner-API/1.0',
             'Connection': 'keep-alive',
+            'Host': OLLAMA_BASE_URL.split('//')[1],
+            'ngrok-skip-browser-warning': 'true'
         }
     )
-
-    # Test connection before configuring Ollama
-    test_response = client.get(f"{OLLAMA_BASE_URL}/api/tags", timeout=5.0)
-    logger.info(f"Initial connection test status: {test_response.status_code}")
-    logger.debug(f"Response headers: {dict(test_response.headers)}")
     
-    # Configure Ollama
+    logger.info("Client configuration complete")
+    logger.debug(f"Client headers: {client.headers}")
+    
+    # Test connection with detailed logging
+    logger.info("Starting initial connection test...")
+    try:
+        test_url = f"{OLLAMA_BASE_URL}/api/tags"
+        logger.info(f"Testing connection to: {test_url}")
+        
+        test_response = client.get(test_url)
+        logger.info(f"Initial test response status: {test_response.status_code}")
+        logger.debug(f"Initial test response headers: {dict(test_response.headers)}")
+        
+        # Handle redirect with detailed logging
+        if test_response.status_code in (301, 302, 307, 308):
+            redirect_url = test_response.headers.get('location')
+            logger.warning(f"Received redirect response. Status: {test_response.status_code}, Location: {redirect_url}")
+            
+            if redirect_url:
+                logger.debug(f"Original redirect URL: {redirect_url}")
+                if redirect_url.startswith('https://'):
+                    logger.info("Converting redirect URL from HTTPS to HTTP")
+                    redirect_url = 'http://' + redirect_url[8:]
+                    logger.debug(f"Converted redirect URL: {redirect_url}")
+                
+                logger.info(f"Following redirect to: {redirect_url}")
+                test_response = client.get(redirect_url)
+                logger.info(f"Redirect response status: {test_response.status_code}")
+                logger.debug(f"Redirect response headers: {dict(test_response.headers)}")
+        
+        # Log response details
+        logger.info(f"Final test response status: {test_response.status_code}")
+        if test_response.status_code >= 400:
+            logger.error(f"Error response content: {test_response.text}")
+        
+    except Exception as e:
+        logger.error(f"Connection test failed with error: {str(e)}", exc_info=True)
+        raise
+    
+    # Configure Ollama with logging
+    logger.info("Configuring Ollama with client...")
     ollama.host = OLLAMA_BASE_URL
     ollama._client = client
-    logger.info("Successfully configured Ollama client")
+    logger.info("Ollama client configuration complete")
 
 except Exception as e:
-    logger.error(f"Error during client setup: {str(e)}")
+    logger.error(f"Client setup failed with error: {str(e)}", exc_info=True)
     # Continue anyway - we'll handle errors in the endpoints
 
 app = FastAPI(
@@ -136,61 +224,141 @@ async def health_check():
 @app.get("/ollama-status")
 async def ollama_status():
     """Check Ollama connection status"""
+    logger.info("Starting Ollama status check...")
+    
     status_info = {
         "base_url": OLLAMA_BASE_URL,
         "checks": [],
-        "final_status": "disconnected"
+        "final_status": "disconnected",
+        "client_config": {
+            "timeouts": {
+                "connect": float(os.getenv('CONNECT_TIMEOUT', '5.0')),
+                "read": float(os.getenv('READ_TIMEOUT', '30.0')),
+                "write": float(os.getenv('WRITE_TIMEOUT', '30.0')),
+                "pool": float(os.getenv('POOL_TIMEOUT', '30.0'))
+            },
+            "headers": dict(ollama._client.headers if ollama._client else {}),
+            "verify_ssl": False,
+            "follow_redirects": False
+        }
     }
     
     try:
         logger.info(f"Attempting to connect to Ollama at: {OLLAMA_BASE_URL}")
+        logger.debug(f"Current status info: {status_info}")
         
         # Try a simple GET request first
         try:
+            logger.info("Attempting base URL check...")
             direct_response = ollama._client.get(OLLAMA_BASE_URL)
             status = direct_response.status_code
             logger.info(f"Base URL response: {status}")
-            status_info["checks"].append({
+            logger.debug(f"Base URL response headers: {dict(direct_response.headers)}")
+            
+            # Handle redirect with detailed logging
+            if status in (301, 302, 307, 308):
+                redirect_url = direct_response.headers.get('location')
+                logger.warning(f"Base URL redirected. Status: {status}, Location: {redirect_url}")
+                
+                if redirect_url:
+                    logger.debug(f"Original redirect URL: {redirect_url}")
+                    if redirect_url.startswith('https://'):
+                        logger.info("Converting redirect URL from HTTPS to HTTP")
+                        redirect_url = 'http://' + redirect_url[8:]
+                        logger.debug(f"Converted redirect URL: {redirect_url}")
+                    
+                    logger.info(f"Following base URL redirect to: {redirect_url}")
+                    direct_response = ollama._client.get(redirect_url)
+                    status = direct_response.status_code
+                    logger.info(f"Base URL redirect response: {status}")
+                    logger.debug(f"Base URL redirect headers: {dict(direct_response.headers)}")
+            
+            check_info = {
                 "type": "base_url",
                 "status_code": status,
                 "headers": dict(direct_response.headers),
                 "url": str(direct_response.url)
-            })
+            }
+            
+            if status >= 400:
+                logger.error(f"Base URL error response: {direct_response.text}")
+                check_info["error_content"] = direct_response.text
+            
+            status_info["checks"].append(check_info)
+            logger.debug(f"Base URL check complete: {check_info}")
+            
         except Exception as e:
-            logger.warning(f"Base URL check failed: {str(e)}")
+            logger.error(f"Base URL check failed: {str(e)}", exc_info=True)
             status_info["checks"].append({
                 "type": "base_url",
-                "error": str(e)
+                "error": str(e),
+                "traceback": str(e.__traceback__)
             })
         
         # Try the API tags endpoint
         try:
+            logger.info("Attempting API tags check...")
             tags_url = f"{OLLAMA_BASE_URL}/api/tags"
+            logger.debug(f"Tags URL: {tags_url}")
+            
             tags_response = ollama._client.get(tags_url)
             status = tags_response.status_code
-            logger.info(f"API tags response: {status}")
-            status_info["checks"].append({
+            logger.info(f"API tags initial response: {status}")
+            logger.debug(f"API tags response headers: {dict(tags_response.headers)}")
+            
+            # Handle redirect with detailed logging
+            if status in (301, 302, 307, 308):
+                redirect_url = tags_response.headers.get('location')
+                logger.warning(f"API tags redirected. Status: {status}, Location: {redirect_url}")
+                
+                if redirect_url:
+                    logger.debug(f"Original tags redirect URL: {redirect_url}")
+                    if redirect_url.startswith('https://'):
+                        logger.info("Converting tags redirect URL from HTTPS to HTTP")
+                        redirect_url = 'http://' + redirect_url[8:]
+                        logger.debug(f"Converted tags redirect URL: {redirect_url}")
+                    
+                    logger.info(f"Following tags redirect to: {redirect_url}")
+                    tags_response = ollama._client.get(redirect_url)
+                    status = tags_response.status_code
+                    logger.info(f"Tags redirect response: {status}")
+                    logger.debug(f"Tags redirect headers: {dict(tags_response.headers)}")
+            
+            check_info = {
                 "type": "api_tags",
                 "status_code": status,
                 "headers": dict(tags_response.headers),
                 "url": str(tags_response.url)
-            })
+            }
+            
             if status == 200:
                 logger.debug(f"Tags response content: {tags_response.text}")
-                status_info["checks"][-1]["content"] = tags_response.text
+                check_info["content"] = tags_response.text
+            elif status >= 400:
+                logger.error(f"Tags error response: {tags_response.text}")
+                check_info["error_content"] = tags_response.text
+            
+            status_info["checks"].append(check_info)
+            logger.debug(f"API tags check complete: {check_info}")
+            
         except Exception as e:
-            logger.warning(f"API tags check failed: {str(e)}")
+            logger.error(f"API tags check failed: {str(e)}", exc_info=True)
             status_info["checks"].append({
                 "type": "api_tags",
-                "error": str(e)
+                "error": str(e),
+                "traceback": str(e.__traceback__)
             })
         
         # Try ollama.list() as final check
         try:
+            logger.info("Attempting Ollama list check...")
             models = ollama.list()
             logger.info(f"Ollama list response: {models}")
+            
             status_info["final_status"] = "connected"
             status_info["models"] = models
+            
+            logger.info("All checks completed successfully")
             return {
                 "status": "connected",
                 "ollama_version": "available",
@@ -199,16 +367,17 @@ async def ollama_status():
                 "debug_info": status_info
             }
         except Exception as e:
-            logger.error(f"Ollama list failed: {str(e)}")
+            logger.error(f"Ollama list failed: {str(e)}", exc_info=True)
             status_info["checks"].append({
                 "type": "ollama_list",
-                "error": str(e)
+                "error": str(e),
+                "traceback": str(e.__traceback__)
             })
             raise
             
     except Exception as e:
         error_msg = str(e)
-        logger.error(f"Ollama connection failed to {OLLAMA_BASE_URL}. Error: {error_msg}")
+        logger.error(f"Ollama connection failed to {OLLAMA_BASE_URL}. Error: {error_msg}", exc_info=True)
         return {
             "status": "disconnected",
             "error": error_msg,
