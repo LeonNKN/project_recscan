@@ -11,6 +11,8 @@ services:
         value: http://fcca-161-142-237-109.ngrok-free.app
       - key: PORT
         value: 8000
+      - key: LOG_LEVEL
+        value: DEBUG
     healthCheckPath: /check
     autoDeploy: true
     plan: free

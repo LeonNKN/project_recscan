@@ -25,6 +25,11 @@ logger = logging.getLogger(__name__)
 # Environment configuration
 ENV = os.getenv('ENV', 'production')
 OLLAMA_BASE_URL = os.getenv('OLLAMA_HOST', 'http://localhost:11434')
+
+# Ensure the URL uses http:// protocol
+if OLLAMA_BASE_URL.startswith('https://'):
+    OLLAMA_BASE_URL = 'http://' + OLLAMA_BASE_URL[8:]
+    
 API_TIMEOUT = int(os.getenv('API_TIMEOUT', '30'))
 ENABLE_CACHE = os.getenv('ENABLE_CACHE', 'true').lower() == 'true'
 PORT = int(os.getenv('PORT', '3000'))
@@ -41,13 +46,14 @@ client = httpx.Client(
     headers={
         'Accept': '*/*',  # Accept any content type
         'User-Agent': 'Receipt-Scanner-API/1.0',  # Custom user agent
+        'Host': OLLAMA_BASE_URL.split('://')[1],  # Add Host header
     }
 )
 
 # Configure Ollama
 ollama.host = OLLAMA_BASE_URL
 ollama._client = client
-logger.info(f"Configured Ollama client for {OLLAMA_BASE_URL}")
+logger.info(f"Configured Ollama client for {OLLAMA_BASE_URL} with headers: {client.headers}")
 
 app = FastAPI(
     title="Receipt Scanner API",
@@ -109,37 +115,74 @@ async def health_check():
 @app.get("/ollama-status")
 async def ollama_status():
     """Check Ollama connection status"""
+    status_info = {
+        "base_url": OLLAMA_BASE_URL,
+        "checks": [],
+        "final_status": "disconnected"
+    }
+    
     try:
         logger.info(f"Attempting to connect to Ollama at: {OLLAMA_BASE_URL}")
         
         # Try a simple GET request first
         try:
             direct_response = ollama._client.get(OLLAMA_BASE_URL)
-            logger.info(f"Base URL response: {direct_response.status_code}")
+            status = direct_response.status_code
+            logger.info(f"Base URL response: {status}")
+            status_info["checks"].append({
+                "type": "base_url",
+                "status_code": status,
+                "headers": dict(direct_response.headers),
+                "url": str(direct_response.url)
+            })
         except Exception as e:
             logger.warning(f"Base URL check failed: {str(e)}")
+            status_info["checks"].append({
+                "type": "base_url",
+                "error": str(e)
+            })
         
         # Try the API tags endpoint
         try:
-            tags_response = ollama._client.get(f"{OLLAMA_BASE_URL}/api/tags")
-            logger.info(f"API tags response: {tags_response.status_code}")
-            if tags_response.status_code == 200:
+            tags_url = f"{OLLAMA_BASE_URL}/api/tags"
+            tags_response = ollama._client.get(tags_url)
+            status = tags_response.status_code
+            logger.info(f"API tags response: {status}")
+            status_info["checks"].append({
+                "type": "api_tags",
+                "status_code": status,
+                "headers": dict(tags_response.headers),
+                "url": str(tags_response.url)
+            })
+            if status == 200:
                 logger.debug(f"Tags response content: {tags_response.text}")
+                status_info["checks"][-1]["content"] = tags_response.text
         except Exception as e:
             logger.warning(f"API tags check failed: {str(e)}")
+            status_info["checks"].append({
+                "type": "api_tags",
+                "error": str(e)
+            })
         
         # Try ollama.list() as final check
         try:
             models = ollama.list()
             logger.info(f"Ollama list response: {models}")
+            status_info["final_status"] = "connected"
+            status_info["models"] = models
             return {
                 "status": "connected",
                 "ollama_version": "available",
                 "ollama_host": OLLAMA_BASE_URL,
-                "models": models
+                "models": models,
+                "debug_info": status_info
             }
         except Exception as e:
             logger.error(f"Ollama list failed: {str(e)}")
+            status_info["checks"].append({
+                "type": "ollama_list",
+                "error": str(e)
+            })
             raise
             
     except Exception as e:
@@ -149,11 +192,7 @@ async def ollama_status():
             "status": "disconnected",
             "error": error_msg,
             "ollama_host": OLLAMA_BASE_URL,
-            "debug_info": {
-                "url": OLLAMA_BASE_URL,
-                "timeout": API_TIMEOUT,
-                "env": ENV
-            }
+            "debug_info": status_info
         }
 
 # Cache the model responses for similar receipts (only if enabled)
