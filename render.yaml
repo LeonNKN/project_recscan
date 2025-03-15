@@ -9,8 +9,6 @@ services:
         value: production
       - key: OLLAMA_HOST
         sync: false  # This allows overriding through dashboard
-      - key: NGROK_AUTH_TOKEN
-        value: 2uGmHMJkSI3ppiWBn11Qxg7FFEf_4Ek5GxPVVPNuAfq3f12W1
       - key: API_TIMEOUT
         value: 30
       - key: ENABLE_CACHE

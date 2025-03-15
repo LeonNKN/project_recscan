@@ -24,17 +24,25 @@ logger = logging.getLogger(__name__)
 
 # Environment configuration
 ENV = os.getenv('ENV', 'production')
-NGROK_AUTH_TOKEN = os.getenv('NGROK_AUTH_TOKEN')  # Kept for reference, but not used in headers
 OLLAMA_BASE_URL = os.getenv('OLLAMA_HOST', 'http://localhost:11434')
 API_TIMEOUT = int(os.getenv('API_TIMEOUT', '30'))
 ENABLE_CACHE = os.getenv('ENABLE_CACHE', 'true').lower() == 'true'
 PORT = int(os.getenv('PORT', '3000'))
 
+# Configure Ollama client with minimal headers
+headers = {
+    'Content-Type': 'application/json',
+    'Accept': 'application/json'
+}
+
 # Configure Ollama client
 ollama.host = OLLAMA_BASE_URL
-
-# Set up httpx client without headers (simplified based on your test)
-ollama._client = httpx.Client(timeout=httpx.Timeout(API_TIMEOUT))
+client = httpx.Client(
+    headers=headers,
+    timeout=httpx.Timeout(API_TIMEOUT),
+    verify=False  # Skip SSL verification for ngrok
+)
+ollama._client = client
 logger.info(f"Configured Ollama client for {OLLAMA_BASE_URL}")
 
 app = FastAPI(
@@ -99,6 +107,13 @@ async def ollama_status():
     """Check Ollama connection status"""
     try:
         logger.info(f"Attempting to connect to Ollama at: {OLLAMA_BASE_URL}")
+        
+        # Try to make a direct request first to test connectivity
+        direct_response = ollama._client.get(f"{OLLAMA_BASE_URL}/api/tags")
+        logger.info(f"Direct request status code: {direct_response.status_code}")
+        logger.debug(f"Direct response content: {direct_response.text}")
+        
+        # If we get here, the connection is working
         response = ollama.list()
         logger.info(f"Successfully connected to Ollama. Response: {response}")
         return {
@@ -110,16 +125,9 @@ async def ollama_status():
     except Exception as e:
         error_msg = str(e)
         logger.error(f"Ollama connection failed to {OLLAMA_BASE_URL}. Error: {error_msg}")
-        if "connection" in error_msg.lower():
-            status_detail = "Connection refused or timed out"
-        elif "forbidden" in error_msg.lower():
-            status_detail = "Access forbidden - check authentication"
-        else:
-            status_detail = "Unknown error"
         return {
             "status": "disconnected",
             "error": error_msg,
-            "error_type": status_detail,
             "ollama_host": OLLAMA_BASE_URL
         }
 
