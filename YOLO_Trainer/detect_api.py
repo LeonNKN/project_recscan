@@ -15,62 +15,23 @@ import time
 # Load environment variables
 load_dotenv()
 
-# Configure logging with more detailed format
+# Configure logging
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s'
 )
 logger = logging.getLogger(__name__)
 
-# Add httpx logger for detailed HTTP logging
 httpx_logger = logging.getLogger("httpx")
 httpx_logger.setLevel(logging.DEBUG)
 
-def log_request_details(request):
-    """Helper function to log request details"""
-    logger.debug(f"Request URL: {request.url}")
-    logger.debug(f"Request Method: {request.method}")
-    logger.debug(f"Request Headers: {dict(request.headers)}")
-    return request
-
-def log_response_details(response):
-    """Helper function to log response details"""
-    try:
-        logger.debug(f"Response Status: {response.status_code}")
-        logger.debug(f"Response Headers: {dict(response.headers)}")
-        if hasattr(response, 'request') and response.request:
-            logger.debug(f"Response URL (after redirects): {response.url}")
-            logger.debug(f"Request Method: {response.request.method}")
-            logger.debug(f"Request Headers: {dict(response.request.headers)}")
-        else:
-            logger.debug("No request instance available on response")
-        if response.status_code >= 400:
-            logger.error(f"Error Response Body: {response.text}")
-    except Exception as e:
-        logger.error(f"Error logging response details: {str(e)}")
-    return response
-
-class DebugTransport(httpx.HTTPTransport):
-    """Custom transport class for detailed request/response logging"""
-    def handle_request(self, request):
-        try:
-            logger.debug(f"Sending request to: {request.url}")
-            log_request_details(request)
-            response = super().handle_request(request)
-            logger.debug("Received response")
-            log_response_details(response)
-            return response
-        except Exception as e:
-            logger.error(f"Error in transport handler: {str(e)}")
-            raise
-
-# Environment configuration with detailed logging
+# Environment configuration
 logger.info("Loading environment configuration...")
 ENV = os.getenv('ENV', 'production')
 logger.info(f"Environment: {ENV}")
 
-OLLAMA_BASE_URL = os.getenv('OLLAMA_HOST', 'http://localhost:11434').strip()
-logger.info(f"Initial OLLAMA_BASE_URL: {OLLAMA_BASE_URL}")
+OLLAMA_BASE_URL = os.getenv('OLLAMA_HOST', 'http://localhost:11434').strip().rstrip('/')
+logger.info(f"Final OLLAMA_BASE_URL: {OLLAMA_BASE_URL}")
 
 ENABLE_CACHE = os.getenv('ENABLE_CACHE', 'true').lower() == 'true'
 logger.info(f"Cache enabled: {ENABLE_CACHE}")
@@ -79,42 +40,19 @@ PORT = int(os.getenv('PORT', '8000'))
 API_TIMEOUT = float(os.getenv('API_TIMEOUT', '60.0'))
 logger.info(f"Port: {PORT}, API Timeout: {API_TIMEOUT}")
 
-# Keep HTTPS as is (remove forced HTTP conversion)
-OLLAMA_BASE_URL = OLLAMA_BASE_URL.rstrip('/')
-logger.info(f"Final OLLAMA_BASE_URL: {OLLAMA_BASE_URL}")
-
-# Set logging level from environment
-log_level = os.getenv('LOG_LEVEL', 'INFO').upper()
-try:
-    logging.getLogger().setLevel(log_level)
-    logger.info(f"Log level set to: {log_level}")
-except ValueError:
-    logger.error(f"Invalid log level: {log_level}. Defaulting to INFO.")
-    logging.getLogger().setLevel(logging.INFO)
-
-# Configure Ollama client with minimal headers
+# Configure Ollama client with no headers initially
 try:
     logger.info("Configuring Ollama client...")
-    transport = DebugTransport(retries=3)
-    
-    connect_timeout = float(os.getenv('CONNECT_TIMEOUT', '5.0'))
-    read_timeout = float(os.getenv('READ_TIMEOUT', '30.0'))
-    write_timeout = float(os.getenv('WRITE_TIMEOUT', '30.0'))
-    pool_timeout = float(os.getenv('POOL_TIMEOUT', '30.0'))
-    logger.info(f"Timeouts - Connect: {connect_timeout}s, Read: {read_timeout}s, Write: {write_timeout}s, Pool: {pool_timeout}s")
-    
     client = httpx.Client(
-        transport=transport,
-        timeout=httpx.Timeout(
-            connect=connect_timeout,
-            read=read_timeout,
-            write=write_timeout,
-            pool=pool_timeout
-        ),
-        verify=True,
+        timeout=httpx.Timeout(API_TIMEOUT),
         follow_redirects=True,
+        verify=True,
         headers={
-            'ngrok-skip-browser-warning': 'true'  # Only keep this header
+            'Accept': '*/*',
+            'User-Agent': 'Receipt-Scanner-API/1.0',
+            'Connection': 'keep-alive',
+            'ngrok-skip-browser-warning': 'true',
+            'Content-Type': 'application/json'
         }
     )
     
@@ -122,14 +60,23 @@ try:
     logger.debug(f"Client headers: {dict(client.headers)}")
     
     # Test connection
-    logger.info("Starting initial connection test...")
     test_url = f"{OLLAMA_BASE_URL}/api/tags"
     logger.info(f"Testing connection to: {test_url}")
     test_response = client.get(test_url)
     logger.info(f"Initial test response status: {test_response.status_code}")
     logger.debug(f"Initial test response headers: {dict(test_response.headers)}")
+    logger.debug(f"Initial test response content: {test_response.text[:200]}...")
+    
     if test_response.status_code >= 400:
-        logger.error(f"Error response content: {test_response.text}")
+        logger.error(f"Connection test failed with status {test_response.status_code}")
+        logger.error(f"Response headers: {dict(test_response.headers)}")
+        logger.error(f"Response content: {test_response.text}")
+        # Try to get more error details
+        try:
+            error_content = test_response.json()
+            logger.error(f"Error details: {error_content}")
+        except:
+            pass
     
     ollama.host = OLLAMA_BASE_URL
     ollama._client = client
@@ -145,10 +92,8 @@ app = FastAPI(
     root_path=os.getenv('ROOT_PATH', '')
 )
 
-# Add GZip compression
 app.add_middleware(GZipMiddleware, minimum_size=1000)
 
-# Configure CORS
 if ENV == 'production':
     app.add_middleware(
         CORSMiddleware,
@@ -179,7 +124,6 @@ async def add_process_time_header(request: Request, call_next):
 
 @app.get("/check")
 async def health_check():
-    """Health check endpoint"""
     try:
         ollama_status_check = await ollama_status()
         if ollama_status_check["status"] != "connected":
@@ -197,25 +141,7 @@ async def health_check():
 
 @app.get("/ollama-status")
 async def ollama_status():
-    """Check Ollama connection status"""
     logger.info("Starting Ollama status check...")
-    
-    status_info = {
-        "base_url": OLLAMA_BASE_URL,
-        "checks": [],
-        "final_status": "disconnected",
-        "client_config": {
-            "timeouts": {
-                "connect": float(os.getenv('CONNECT_TIMEOUT', '5.0')),
-                "read": float(os.getenv('READ_TIMEOUT', '30.0')),
-                "write": float(os.getenv('WRITE_TIMEOUT', '30.0')),
-                "pool": float(os.getenv('POOL_TIMEOUT', '30.0'))
-            },
-            "headers": dict(ollama._client.headers) if ollama._client else {},
-            "verify_ssl": True,
-            "follow_redirects": True
-        }
-    }
     
     try:
         if not ollama._client:
@@ -223,50 +149,72 @@ async def ollama_status():
             
         logger.info(f"Attempting to connect to Ollama at: {OLLAMA_BASE_URL}")
         
-        # Try ollama.list()
+        # First try a direct GET request to check connectivity
+        try:
+            direct_response = ollama._client.get(OLLAMA_BASE_URL)
+            logger.info(f"Base URL check status: {direct_response.status_code}")
+            if direct_response.status_code >= 400:
+                logger.error(f"Base URL check failed: {direct_response.text}")
+        except Exception as e:
+            logger.error(f"Base URL check failed: {str(e)}")
+        
+        # Try the API tags endpoint
+        try:
+            tags_response = ollama._client.get(f"{OLLAMA_BASE_URL}/api/tags")
+            logger.info(f"API tags check status: {tags_response.status_code}")
+            if tags_response.status_code >= 400:
+                logger.error(f"API tags check failed: {tags_response.text}")
+                try:
+                    error_content = tags_response.json()
+                    logger.error(f"API tags error details: {error_content}")
+                except:
+                    pass
+        except Exception as e:
+            logger.error(f"API tags check failed: {str(e)}")
+        
+        # Try ollama.list() as final check
         logger.info("Attempting Ollama list check...")
         models = ollama.list()
         logger.info(f"Ollama list response: {models}")
-        
-        status_info["final_status"] = "connected"
-        status_info["models"] = models
         
         return {
             "status": "connected",
             "ollama_version": "available",
             "ollama_host": OLLAMA_BASE_URL,
             "models": models,
-            "debug_info": status_info
+            "client_info": {
+                "headers": dict(ollama._client.headers),
+                "timeout": str(ollama._client.timeout),
+                "verify_ssl": ollama._client.verify
+            }
         }
     except httpx.HTTPStatusError as e:
         error_msg = f"HTTP {e.response.status_code}: {e.response.text}"
         logger.error(f"Ollama connection failed: {error_msg}")
-        status_info["checks"].append({
-            "type": "ollama_list",
-            "status_code": e.response.status_code,
-            "error_content": e.response.text
-        })
         return {
             "status": "disconnected",
             "error": error_msg,
             "ollama_host": OLLAMA_BASE_URL,
-            "debug_info": status_info
+            "client_info": {
+                "headers": dict(ollama._client.headers) if ollama._client else {},
+                "timeout": str(ollama._client.timeout) if ollama._client else None,
+                "verify_ssl": ollama._client.verify if ollama._client else None
+            }
         }
     except Exception as e:
         error_msg = str(e)
         logger.error(f"Ollama connection failed: {error_msg}", exc_info=True)
-        status_info["checks"].append({
-            "type": "ollama_list",
-            "error": error_msg
-        })
         return {
             "status": "disconnected",
             "error": error_msg,
             "ollama_host": OLLAMA_BASE_URL,
-            "debug_info": status_info
+            "client_info": {
+                "headers": dict(ollama._client.headers) if ollama._client else {},
+                "timeout": str(ollama._client.timeout) if ollama._client else None,
+                "verify_ssl": ollama._client.verify if ollama._client else None
+            }
         }
 
-# Cache the model responses
 if ENABLE_CACHE:
     @lru_cache(maxsize=100)
     def analyze_receipt_text(text: str):
