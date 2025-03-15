@@ -35,22 +35,31 @@ def log_request_details(request):
 
 def log_response_details(response):
     """Helper function to log response details"""
-    logger.debug(f"Response Status: {response.status_code}")
-    logger.debug(f"Response Headers: {dict(response.headers)}")
-    logger.debug(f"Response URL (after redirects): {response.url}")
-    if response.status_code >= 400:
-        logger.error(f"Error Response Body: {response.text}")
+    try:
+        logger.debug(f"Response Status: {response.status_code}")
+        logger.debug(f"Response Headers: {dict(response.headers)}")
+        # Only try to access URL if request is set
+        if hasattr(response, 'request'):
+            logger.debug(f"Response URL (after redirects): {response.url}")
+        if response.status_code >= 400:
+            logger.error(f"Error Response Body: {response.text}")
+    except Exception as e:
+        logger.error(f"Error logging response details: {str(e)}")
     return response
 
 class DebugTransport(httpx.HTTPTransport):
     """Custom transport class for detailed request/response logging"""
     def handle_request(self, request):
-        logger.debug(f"Sending request to: {request.url}")
-        log_request_details(request)
-        response = super().handle_request(request)
-        logger.debug("Received response")
-        log_response_details(response)
-        return response
+        try:
+            logger.debug(f"Sending request to: {request.url}")
+            log_request_details(request)
+            response = super().handle_request(request)
+            logger.debug("Received response")
+            log_response_details(response)
+            return response
+        except Exception as e:
+            logger.error(f"Error in transport handler: {str(e)}")
+            raise
 
 # Environment configuration with detailed logging
 logger.info("Loading environment configuration...")
@@ -62,6 +71,11 @@ logger.info(f"Initial OLLAMA_BASE_URL: {OLLAMA_BASE_URL}")
 
 ENABLE_CACHE = os.getenv('ENABLE_CACHE', 'true').lower() == 'true'
 logger.info(f"Cache enabled: {ENABLE_CACHE}")
+
+# Add PORT and API_TIMEOUT configuration
+PORT = int(os.getenv('PORT', '8000'))
+API_TIMEOUT = float(os.getenv('API_TIMEOUT', '60.0'))
+logger.info(f"Port: {PORT}, API Timeout: {API_TIMEOUT}")
 
 # URL handling with detailed logging
 if OLLAMA_BASE_URL.startswith('https://'):
@@ -81,6 +95,9 @@ try:
 except ValueError as e:
     logger.error(f"Invalid log level: {log_level}. Defaulting to INFO.")
     logging.getLogger().setLevel(logging.INFO)
+
+# Create a global client variable
+client = None
 
 # Configure Ollama client with detailed logging
 try:
@@ -116,7 +133,7 @@ try:
     )
     
     logger.info("Client configuration complete")
-    logger.debug(f"Client headers: {client.headers}")
+    logger.debug(f"Client headers: {dict(client.headers) if client else {}}")
     
     # Test connection with detailed logging
     logger.info("Starting initial connection test...")
@@ -226,6 +243,14 @@ async def ollama_status():
     """Check Ollama connection status"""
     logger.info("Starting Ollama status check...")
     
+    # Get client headers safely
+    client_headers = {}
+    try:
+        if ollama._client and hasattr(ollama._client, 'headers'):
+            client_headers = dict(ollama._client.headers)
+    except Exception as e:
+        logger.warning(f"Could not get client headers: {str(e)}")
+    
     status_info = {
         "base_url": OLLAMA_BASE_URL,
         "checks": [],
@@ -237,13 +262,16 @@ async def ollama_status():
                 "write": float(os.getenv('WRITE_TIMEOUT', '30.0')),
                 "pool": float(os.getenv('POOL_TIMEOUT', '30.0'))
             },
-            "headers": dict(ollama._client.headers if ollama._client else {}),
+            "headers": client_headers,
             "verify_ssl": False,
             "follow_redirects": False
         }
     }
     
     try:
+        if not ollama._client:
+            raise RuntimeError("Ollama client not initialized")
+            
         logger.info(f"Attempting to connect to Ollama at: {OLLAMA_BASE_URL}")
         logger.debug(f"Current status info: {status_info}")
         

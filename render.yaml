@@ -23,6 +23,8 @@ services:
         value: 30.0
       - key: ENABLE_CACHE
         value: "true"
+      - key: API_TIMEOUT
+        value: 60.0
     healthCheckPath: /check
     autoDeploy: true
     plan: free
