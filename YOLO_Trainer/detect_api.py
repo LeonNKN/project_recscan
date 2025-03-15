@@ -38,9 +38,15 @@ def log_response_details(response):
     try:
         logger.debug(f"Response Status: {response.status_code}")
         logger.debug(f"Response Headers: {dict(response.headers)}")
-        # Only try to access URL if request is set
-        if hasattr(response, 'request'):
+        
+        # Only try to access request and URL if they exist
+        if hasattr(response, 'request') and response.request:
             logger.debug(f"Response URL (after redirects): {response.url}")
+            logger.debug(f"Request Method: {response.request.method}")
+            logger.debug(f"Request Headers: {dict(response.request.headers)}")
+        else:
+            logger.debug("No request instance available on response")
+            
         if response.status_code >= 400:
             logger.error(f"Error Response Body: {response.text}")
     except Exception as e:
@@ -121,13 +127,12 @@ try:
             write=write_timeout,
             pool=pool_timeout
         ),
-        verify=False,
-        follow_redirects=False,
+        verify=True,  # Enable SSL verification
+        follow_redirects=True,  # Enable following redirects
         headers={
             'Accept': '*/*',
             'User-Agent': 'Receipt-Scanner-API/1.0',
             'Connection': 'keep-alive',
-            'Host': OLLAMA_BASE_URL.split('//')[1],
             'ngrok-skip-browser-warning': 'true'
         }
     )
@@ -145,25 +150,9 @@ try:
         logger.info(f"Initial test response status: {test_response.status_code}")
         logger.debug(f"Initial test response headers: {dict(test_response.headers)}")
         
-        # Handle redirect with detailed logging
-        if test_response.status_code in (301, 302, 307, 308):
-            redirect_url = test_response.headers.get('location')
-            logger.warning(f"Received redirect response. Status: {test_response.status_code}, Location: {redirect_url}")
-            
-            if redirect_url:
-                logger.debug(f"Original redirect URL: {redirect_url}")
-                if redirect_url.startswith('https://'):
-                    logger.info("Converting redirect URL from HTTPS to HTTP")
-                    redirect_url = 'http://' + redirect_url[8:]
-                    logger.debug(f"Converted redirect URL: {redirect_url}")
-                
-                logger.info(f"Following redirect to: {redirect_url}")
-                test_response = client.get(redirect_url)
-                logger.info(f"Redirect response status: {test_response.status_code}")
-                logger.debug(f"Redirect response headers: {dict(test_response.headers)}")
+        # Log final URL after redirects
+        logger.info(f"Final URL after redirects: {test_response.url}")
         
-        # Log response details
-        logger.info(f"Final test response status: {test_response.status_code}")
         if test_response.status_code >= 400:
             logger.error(f"Error response content: {test_response.text}")
         
@@ -263,8 +252,8 @@ async def ollama_status():
                 "pool": float(os.getenv('POOL_TIMEOUT', '30.0'))
             },
             "headers": client_headers,
-            "verify_ssl": False,
-            "follow_redirects": False
+            "verify_ssl": True,
+            "follow_redirects": True
         }
     }
     
