@@ -24,36 +24,55 @@ logger = logging.getLogger(__name__)
 
 # Environment configuration
 ENV = os.getenv('ENV', 'production')
-OLLAMA_BASE_URL = os.getenv('OLLAMA_HOST', 'http://localhost:11434')
+OLLAMA_BASE_URL = os.getenv('OLLAMA_HOST', 'http://localhost:11434').strip()
 
-# Ensure the URL uses http:// protocol
+# URL handling
 if OLLAMA_BASE_URL.startswith('https://'):
+    logger.warning("Converting HTTPS URL to HTTP for Ollama connection")
     OLLAMA_BASE_URL = 'http://' + OLLAMA_BASE_URL[8:]
-    
-API_TIMEOUT = int(os.getenv('API_TIMEOUT', '30'))
-ENABLE_CACHE = os.getenv('ENABLE_CACHE', 'true').lower() == 'true'
-PORT = int(os.getenv('PORT', '3000'))
+
+# Remove any trailing slashes
+OLLAMA_BASE_URL = OLLAMA_BASE_URL.rstrip('/')
 
 logger.info(f"Starting with OLLAMA_BASE_URL: {OLLAMA_BASE_URL}")
 
-# Configure Ollama client with appropriate settings
-transport = httpx.HTTPTransport(retries=3)  # Add retries
-client = httpx.Client(
-    transport=transport,
-    timeout=httpx.Timeout(API_TIMEOUT),
-    verify=False,  # Skip SSL verification for ngrok
-    follow_redirects=True,  # Follow redirects
-    headers={
-        'Accept': '*/*',  # Accept any content type
-        'User-Agent': 'Receipt-Scanner-API/1.0',  # Custom user agent
-        'Host': OLLAMA_BASE_URL.split('://')[1],  # Add Host header
-    }
-)
+# Set logging level from environment
+log_level = os.getenv('LOG_LEVEL', 'INFO').upper()
+logging.getLogger().setLevel(log_level)
+logger.info(f"Log level set to: {log_level}")
 
-# Configure Ollama
-ollama.host = OLLAMA_BASE_URL
-ollama._client = client
-logger.info(f"Configured Ollama client for {OLLAMA_BASE_URL} with headers: {client.headers}")
+# Configure Ollama client with appropriate settings
+try:
+    transport = httpx.HTTPTransport(retries=3)
+    client = httpx.Client(
+        transport=transport,
+        timeout=httpx.Timeout(
+            connect=float(os.getenv('CONNECT_TIMEOUT', '5.0')),
+            read=float(os.getenv('READ_TIMEOUT', '30.0')),
+            write=float(os.getenv('WRITE_TIMEOUT', '30.0')),
+        ),
+        verify=False,  # Skip SSL verification for ngrok
+        follow_redirects=True,
+        headers={
+            'Accept': '*/*',
+            'User-Agent': 'Receipt-Scanner-API/1.0',
+            'Connection': 'keep-alive',
+        }
+    )
+
+    # Test connection before configuring Ollama
+    test_response = client.get(f"{OLLAMA_BASE_URL}/api/tags", timeout=5.0)
+    logger.info(f"Initial connection test status: {test_response.status_code}")
+    logger.debug(f"Response headers: {dict(test_response.headers)}")
+    
+    # Configure Ollama
+    ollama.host = OLLAMA_BASE_URL
+    ollama._client = client
+    logger.info("Successfully configured Ollama client")
+
+except Exception as e:
+    logger.error(f"Error during client setup: {str(e)}")
+    # Continue anyway - we'll handle errors in the endpoints
 
 app = FastAPI(
     title="Receipt Scanner API",

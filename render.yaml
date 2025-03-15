@@ -13,6 +13,12 @@ services:
         value: 8000
       - key: LOG_LEVEL
         value: DEBUG
+      - key: CONNECT_TIMEOUT
+        value: 5.0
+      - key: READ_TIMEOUT
+        value: 30.0
+      - key: WRITE_TIMEOUT
+        value: 30.0
     healthCheckPath: /check
     autoDeploy: true
     plan: free
