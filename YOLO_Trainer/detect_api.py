@@ -25,6 +25,7 @@ logger = logging.getLogger(__name__)
 # Environment configuration
 ENV = os.getenv('ENV', 'production')
 OLLAMA_BASE_URL = os.getenv('OLLAMA_HOST', 'http://localhost:11434').strip()
+ENABLE_CACHE = os.getenv('ENABLE_CACHE', 'true').lower() == 'true'
 
 # URL handling
 if OLLAMA_BASE_URL.startswith('https://'):
@@ -50,6 +51,7 @@ try:
             connect=float(os.getenv('CONNECT_TIMEOUT', '5.0')),
             read=float(os.getenv('READ_TIMEOUT', '30.0')),
             write=float(os.getenv('WRITE_TIMEOUT', '30.0')),
+            pool=float(os.getenv('POOL_TIMEOUT', '30.0'))  # Added pool timeout
         ),
         verify=False,  # Skip SSL verification for ngrok
         follow_redirects=True,
