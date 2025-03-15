@@ -34,6 +34,8 @@ headers = {
     "Authorization": f"Bearer {NGROK_AUTH_TOKEN}",
     "ngrok-skip-browser-warning": "true"
 } if NGROK_AUTH_TOKEN else {}
+if headers:
+    ollama._client = httpx.Client(headers=headers, timeout=httpx.Timeout(API_TIMEOUT))
 
 # Configure Ollama client with authentication if needed
 ollama.host = OLLAMA_BASE_URL
