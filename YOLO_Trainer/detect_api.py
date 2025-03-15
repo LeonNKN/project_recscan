@@ -10,7 +10,7 @@ from functools import lru_cache
 import os
 from dotenv import load_dotenv
 import time
-
+import httpx  # Add this line
 # Load environment variables
 load_dotenv()
 
@@ -22,27 +22,24 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Environment configuration
-ENV = os.getenv('ENV', 'production')  # Default to production for Vercel
+ENV = os.getenv('ENV', 'production')
 NGROK_AUTH_TOKEN = os.getenv('NGROK_AUTH_TOKEN')
 OLLAMA_BASE_URL = os.getenv('OLLAMA_HOST', 'http://localhost:11434')
 API_TIMEOUT = int(os.getenv('API_TIMEOUT', '30'))
 ENABLE_CACHE = os.getenv('ENABLE_CACHE', 'true').lower() == 'true'
-PORT = int(os.getenv('PORT', '3000'))  # Vercel uses port 3000 by default
+PORT = int(os.getenv('PORT', '3000'))
 
 # Configure headers for ngrok authentication
 headers = {
     "Authorization": f"Bearer {NGROK_AUTH_TOKEN}",
     "ngrok-skip-browser-warning": "true"
 } if NGROK_AUTH_TOKEN else {}
-if headers:
-    ollama._client = httpx.Client(headers=headers, timeout=httpx.Timeout(API_TIMEOUT))
 
 # Configure Ollama client with authentication if needed
 ollama.host = OLLAMA_BASE_URL
 
 # Create a new client with the headers if they exist
 if headers:
-    import httpx
     # Create a client with proper timeout and headers
     ollama._client = httpx.Client(
         headers=headers,
@@ -50,7 +47,7 @@ if headers:
     )
     logger.info("[UNIQUE-ID-1234] Configured Ollama client with authentication headers")
     logger.debug(f"[UNIQUE-ID-1234] Using headers: {headers}")
-
+    
 app = FastAPI(
     title="Receipt Scanner API",
     description="API for analyzing receipt text using Ollama",
