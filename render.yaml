@@ -8,11 +8,7 @@ services:
       - key: ENV
         value: production
       - key: OLLAMA_HOST
-        sync: false  # This allows overriding through dashboard
-      - key: API_TIMEOUT
-        value: 30
-      - key: ENABLE_CACHE
-        value: true
+        value: http://fcca-161-142-237-109.ngrok-free.app
       - key: PORT
         value: 8000
     healthCheckPath: /check
