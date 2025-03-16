@@ -3,6 +3,7 @@ import 'package:path/path.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:flutter/foundation.dart';
+import '../models/models.dart' show OrderItem;
 
 class DatabaseService {
   static DatabaseService? _instance;
@@ -205,6 +206,64 @@ class DatabaseService {
       );
     });
     debugPrint('Transaction and associated items deleted successfully');
+  }
+
+  // Update transaction details
+  Future<void> updateTransaction({
+    required int id,
+    required int categoryId,
+    required String restaurantName,
+    required DateTime dateTime,
+    required double subtotal,
+    required double total,
+  }) async {
+    final db = await database;
+    await db.update(
+      'Transaction',
+      {
+        'category_id': categoryId,
+        'restaurant_name': restaurantName,
+        'date_time': dateTime.toIso8601String(),
+        'subtotal': subtotal,
+        'total': total,
+      },
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+    debugPrint('Transaction $id updated successfully');
+  }
+
+  // Update order items for a transaction
+  Future<void> updateOrderItems({
+    required int transactionId,
+    required List<OrderItem> items,
+  }) async {
+    final db = await database;
+    await db.transaction((txn) async {
+      debugPrint('Updating order items for transaction $transactionId');
+
+      // Delete existing items
+      await txn.delete(
+        'OrderItem',
+        where: 'transaction_id = ?',
+        whereArgs: [transactionId],
+      );
+
+      // Insert new items
+      for (final item in items) {
+        await txn.insert(
+          'OrderItem',
+          {
+            'transaction_id': transactionId,
+            'name': item.name,
+            'price': item.price,
+            'quantity': item.quantity,
+          },
+        );
+      }
+    });
+    debugPrint(
+        'Updated ${items.length} order items for transaction $transactionId');
   }
 
   Future close() async {

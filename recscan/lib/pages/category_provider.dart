@@ -232,12 +232,46 @@ class CategoryProvider with ChangeNotifier {
   }
 
   // Update a transaction's details
-  void updateTransaction(RestaurantCardModel updatedCard) {
-    final index =
-        _restaurantCards.indexWhere((card) => card.id == updatedCard.id);
-    if (index != -1) {
-      _restaurantCards[index] = updatedCard;
-      notifyListeners();
+  Future<void> updateTransaction(RestaurantCardModel updatedCard) async {
+    try {
+      debugPrint('Updating transaction: ${updatedCard.id}');
+
+      // Get category ID
+      final categories = await _dbService.getAllCategories();
+      final category = categories.firstWhere(
+        (c) => c['name'] == updatedCard.category,
+        orElse: () => categories.first,
+      );
+      final categoryId = category['id'] as int;
+
+      // Update transaction in database
+      await _dbService.updateTransaction(
+        id: updatedCard.id,
+        categoryId: categoryId,
+        restaurantName: updatedCard.restaurantName,
+        dateTime: updatedCard.dateTime,
+        subtotal: updatedCard.subtotal,
+        total: updatedCard.total,
+      );
+
+      // Update order items
+      await _dbService.updateOrderItems(
+        transactionId: updatedCard.id,
+        items: updatedCard.items,
+      );
+
+      // Update in memory
+      final index =
+          _restaurantCards.indexWhere((card) => card.id == updatedCard.id);
+      if (index != -1) {
+        _restaurantCards[index] = updatedCard;
+        notifyListeners();
+      }
+
+      debugPrint('Transaction updated successfully');
+    } catch (e) {
+      debugPrint('Error updating transaction: $e');
+      rethrow;
     }
   }
 

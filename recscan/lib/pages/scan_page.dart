@@ -29,6 +29,7 @@ class _ScanPageState extends State<ScanPage> {
   bool _isProcessing = false;
   String? _error;
   String? _extractedText;
+  String _detectedLanguage = '';
 
   @override
   void initState() {
@@ -82,10 +83,13 @@ class _ScanPageState extends State<ScanPage> {
   Future<void> _processReceipt() async {
     if (_image == null) return;
 
-    setState(() => _isProcessing = true);
+    setState(() {
+      _isProcessing = true;
+      _detectedLanguage = '';
+    });
 
     try {
-      // First extract text from image
+      // First extract text from image using Google ML Kit
       final extractedText = await _extractTextFromImage(_image!);
       if (extractedText == null || extractedText.isEmpty) {
         setState(() => _error = 'Could not extract text from image');
@@ -94,16 +98,24 @@ class _ScanPageState extends State<ScanPage> {
 
       setState(() => _extractedText = extractedText);
 
+      // Prepare image data
+      List<int> imageBytes = await _image!.readAsBytes();
+      String base64Image = base64Encode(imageBytes);
+
       // Debug logging
       debugPrint('Sending request to: ${ApiConfig.analyzeReceipt}');
       debugPrint('Headers: ${ApiConfig.headers}');
       debugPrint('Text length: ${extractedText.length}');
+      debugPrint('Image size: ${(base64Image.length * 3 / 4).round()} bytes');
 
-      // Send extracted text to API using ApiConfig
+      // Send both text and image to API
       final response = await http.post(
         Uri.parse(ApiConfig.analyzeReceipt),
         headers: ApiConfig.headers,
-        body: json.encode({'text': extractedText}),
+        body: json.encode({
+          'text': extractedText,
+          'image': base64Image,
+        }),
       );
 
       debugPrint('Response status: ${response.statusCode}');
@@ -128,6 +140,7 @@ class _ScanPageState extends State<ScanPage> {
             _total = data['total_amount'].toString();
             _merchantName = data['merchant_name'] ?? 'Unknown Merchant';
             _date = data['date'] ?? DateTime.now().toString().split(' ')[0];
+            _detectedLanguage = data['detected_language'] ?? '';
             _error = null;
           });
         } else {
@@ -185,6 +198,29 @@ class _ScanPageState extends State<ScanPage> {
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(12),
                   child: Image.file(_image!, fit: BoxFit.contain),
+                ),
+              ),
+
+            // Language Detection Info
+            if (_detectedLanguage.isNotEmpty)
+              Container(
+                margin: const EdgeInsets.symmetric(horizontal: 16),
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.blue[50],
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.blue[200]!),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(Icons.language, color: Colors.blue),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Detected Language: ${_getLanguageName(_detectedLanguage)}',
+                      style: const TextStyle(color: Colors.blue),
+                    ),
+                  ],
                 ),
               ),
 
@@ -325,6 +361,19 @@ class _ScanPageState extends State<ScanPage> {
       (sum, item) => sum + (item.price * item.quantity),
     );
     return subtotal.toStringAsFixed(2);
+  }
+
+  String _getLanguageName(String langCode) {
+    switch (langCode.toLowerCase()) {
+      case 'ko':
+        return 'Korean';
+      case 'ja':
+        return 'Japanese';
+      case 'en':
+        return 'English';
+      default:
+        return langCode;
+    }
   }
 }
 
