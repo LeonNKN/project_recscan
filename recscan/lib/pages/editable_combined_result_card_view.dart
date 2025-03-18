@@ -8,6 +8,9 @@ class EditableCombinedResultCardView extends StatefulWidget {
   final List<OrderItem> orderItems;
   final String subtotal;
   final String total;
+  final String discountInfo;
+  final String taxInfo;
+  final String serviceChargeInfo;
   final Function(List<OrderItem> updatedOrderItems, String updatedSubtotal,
       String updatedTotal) onChanged;
   final Function(List<OrderItem> finalOrderItems, String finalSubtotal,
@@ -18,6 +21,9 @@ class EditableCombinedResultCardView extends StatefulWidget {
     required this.orderItems,
     required this.subtotal,
     required this.total,
+    this.discountInfo = '',
+    this.taxInfo = '',
+    this.serviceChargeInfo = '',
     required this.onChanged,
     required this.onDone,
   });
@@ -45,8 +51,13 @@ class _EditableCombinedResultCardViewState
               quantity: item.quantity,
             ))
         .toList();
-    _subtotalController = TextEditingController(text: widget.subtotal);
-    _totalController = TextEditingController(text: widget.total);
+
+    // Initialize controllers with default values - empty to ensure we calculate our own values
+    _subtotalController = TextEditingController();
+    _totalController = TextEditingController();
+
+    // Calculate totals immediately after initialization
+    Future.microtask(_forceUpdateTotals);
 
     // Set the default category to the first category from the provider
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -65,6 +76,69 @@ class _EditableCombinedResultCardViewState
     _subtotalController.dispose();
     _totalController.dispose();
     super.dispose();
+  }
+
+  // Force recalculation and refresh of UI
+  void _forceUpdateTotals() {
+    _updateTotals();
+    setState(() {}); // Force rebuild
+  }
+
+  void _updateTotals() {
+    // First calculate the final price for each item (with discounts, taxes, etc.)
+    double subtotal = 0.0;
+    double finalTotal = 0.0;
+    double discountAmount = 0.0;
+    double taxAmount = 0.0;
+    double serviceChargeAmount = 0.0;
+
+    // Add up the original prices for subtotal
+    subtotal = _orderItems.fold(
+        0.0, (sum, item) => sum + (item.price * item.quantity));
+
+    // Apply discount if any
+    double discountedTotal = subtotal;
+    if (widget.discountInfo.isNotEmpty) {
+      double discountPercent = _getDiscountPercent();
+      discountAmount = subtotal * (discountPercent / 100);
+      discountedTotal = subtotal - discountAmount;
+    }
+
+    // Start with discounted total
+    finalTotal = discountedTotal;
+
+    // Add service charge if applicable
+    if (widget.serviceChargeInfo.isNotEmpty) {
+      double serviceChargePercent = _getServiceChargePercent();
+      serviceChargeAmount = discountedTotal * (serviceChargePercent / 100);
+      finalTotal += serviceChargeAmount;
+    }
+
+    // Add tax if applicable
+    if (widget.taxInfo.isNotEmpty) {
+      double taxPercent = _getTaxPercent();
+      taxAmount = discountedTotal * (taxPercent / 100);
+      finalTotal += taxAmount;
+    }
+
+    // Debug prints to verify calculations
+    print('Raw Subtotal: $subtotal');
+    print('Discount: $discountAmount (${_getDiscountPercent()}%)');
+    print('After Discount: $discountedTotal');
+    print('Service Charge: $serviceChargeAmount');
+    print('Tax Amount: $taxAmount');
+    print('FINAL TOTAL: $finalTotal');
+
+    // Update the text controllers with calculated values
+    _subtotalController.text = subtotal.toStringAsFixed(2);
+    _totalController.text = finalTotal.toStringAsFixed(2);
+
+    // Notify parent of changes
+    widget.onChanged(
+      _orderItems,
+      _subtotalController.text,
+      _totalController.text,
+    );
   }
 
   void _updateOrderItem(int index, String field, String newValue) {
@@ -90,27 +164,14 @@ class _EditableCombinedResultCardViewState
           quantity: quantity,
         );
       }
-      _updateTotals();
+      _forceUpdateTotals();
     });
-  }
-
-  void _updateTotals() {
-    double subtotal =
-        _orderItems.fold(0, (sum, item) => sum + (item.price * item.quantity));
-    _subtotalController.text = subtotal.toStringAsFixed(2);
-    _totalController.text = subtotal.toStringAsFixed(2);
-
-    widget.onChanged(
-      _orderItems,
-      _subtotalController.text,
-      _totalController.text,
-    );
   }
 
   void _deleteOrderItem(int index) {
     setState(() {
       _orderItems.removeAt(index);
-      _updateTotals();
+      _forceUpdateTotals();
     });
   }
 
@@ -121,7 +182,7 @@ class _EditableCombinedResultCardViewState
         price: 0.00,
         quantity: 1,
       ));
-      _updateTotals();
+      _forceUpdateTotals();
     });
   }
 
@@ -238,6 +299,27 @@ class _EditableCombinedResultCardViewState
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: Column(
               children: [
+                // Add help text for deleting items
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8.0),
+                  child: Row(
+                    children: const [
+                      Icon(Icons.info_outline, size: 16, color: Colors.blue),
+                      SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Tap and hold an item to delete it',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontStyle: FontStyle.italic,
+                            color: Colors.blue,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+
                 // Items Header
                 if (_orderItems.isNotEmpty)
                   Padding(
@@ -265,7 +347,14 @@ class _EditableCombinedResultCardViewState
                             style: Theme.of(context).textTheme.titleSmall,
                           ),
                         ),
-                        const SizedBox(width: 40),
+                        // Add header for final price (after discounts/taxes)
+                        Expanded(
+                          child: Text(
+                            'Final',
+                            style: Theme.of(context).textTheme.titleSmall,
+                            textAlign: TextAlign.center,
+                          ),
+                        ),
                       ],
                     ),
                   ),
@@ -277,81 +366,316 @@ class _EditableCombinedResultCardViewState
                   itemCount: _orderItems.length,
                   itemBuilder: (context, index) {
                     final item = _orderItems[index];
-                    return Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 4),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            flex: 3,
-                            child: _isEditing
-                                ? TextFormField(
-                                    initialValue: item.name,
-                                    decoration: InputDecoration(
-                                      isDense: true,
-                                      contentPadding:
-                                          const EdgeInsets.symmetric(
-                                              vertical: 8),
-                                      hintText: 'Item name',
-                                      border: OutlineInputBorder(
-                                        borderRadius: BorderRadius.circular(8),
-                                      ),
+
+                    // Calculate the final price including discounts/taxes
+                    double originalTotal = item.price * item.quantity;
+
+                    // STEP 1: Apply discount first (if any)
+                    double discountedPrice = originalTotal;
+                    if (widget.discountInfo.isNotEmpty) {
+                      double discountPercent = _getDiscountPercent();
+                      discountedPrice =
+                          originalTotal * (1 - discountPercent / 100);
+                    }
+
+                    // STEP 2: Calculate tax and service charge on the DISCOUNTED price
+                    double finalTotal = discountedPrice;
+                    double serviceChargeAmount = 0.0;
+                    double taxAmount = 0.0;
+
+                    // Apply service charge if available (on discounted price)
+                    if (widget.serviceChargeInfo.isNotEmpty) {
+                      double serviceChargePercent = _getServiceChargePercent();
+                      serviceChargeAmount =
+                          discountedPrice * (serviceChargePercent / 100);
+                      finalTotal += serviceChargeAmount;
+                    }
+
+                    // Apply tax if available (on discounted price)
+                    if (widget.taxInfo.isNotEmpty) {
+                      double taxPercent = _getTaxPercent();
+                      taxAmount = discountedPrice * (taxPercent / 100);
+                      finalTotal += taxAmount;
+                    }
+
+                    // Replace Row with GestureDetector for long-press to delete
+                    return GestureDetector(
+                      onLongPress: () {
+                        // Show confirmation dialog before deleting
+                        showDialog(
+                          context: context,
+                          builder: (BuildContext context) {
+                            return AlertDialog(
+                              title: const Text("Delete Item"),
+                              content: Text(
+                                  "Do you want to delete the item '${item.name}'?"),
+                              actions: [
+                                TextButton(
+                                  onPressed: () => Navigator.of(context).pop(),
+                                  child: const Text("Cancel"),
+                                ),
+                                TextButton(
+                                  onPressed: () {
+                                    Navigator.of(context).pop();
+                                    _deleteOrderItem(index);
+                                  },
+                                  child: const Text("Delete",
+                                      style: TextStyle(color: Colors.red)),
+                                ),
+                              ],
+                            );
+                          },
+                        );
+                      },
+                      // Add onTap handler to show calculation details
+                      onTap: () {
+                        if (!_isEditing && (finalTotal != originalTotal)) {
+                          showDialog(
+                            context: context,
+                            builder: (BuildContext context) {
+                              return AlertDialog(
+                                title: Text(item.name),
+                                content: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text('Calculation Breakdown:'),
+                                    const SizedBox(height: 8),
+                                    Table(
+                                      columnWidths: const {
+                                        0: FlexColumnWidth(3),
+                                        1: FlexColumnWidth(2),
+                                      },
+                                      children: [
+                                        TableRow(
+                                          children: [
+                                            Text('Original Price:'),
+                                            Text(
+                                                'RM${item.price.toStringAsFixed(2)}'),
+                                          ],
+                                        ),
+                                        TableRow(
+                                          children: [
+                                            Text('Quantity:'),
+                                            Text('${item.quantity}'),
+                                          ],
+                                        ),
+                                        TableRow(
+                                          children: [
+                                            Text('Original Total:'),
+                                            Text(
+                                                'RM${originalTotal.toStringAsFixed(2)}'),
+                                          ],
+                                        ),
+                                        if (discountedPrice != originalTotal)
+                                          TableRow(
+                                            children: [
+                                              Text(
+                                                  'Discount (${_getDiscountPercent().toStringAsFixed(1)}%):'),
+                                              Text(
+                                                  '-RM${(originalTotal - discountedPrice).toStringAsFixed(2)}'),
+                                            ],
+                                          ),
+                                        TableRow(
+                                          children: [
+                                            Text('After Discount:'),
+                                            Text(
+                                                'RM${discountedPrice.toStringAsFixed(2)}'),
+                                          ],
+                                        ),
+                                        if (serviceChargeAmount > 0)
+                                          TableRow(
+                                            children: [
+                                              Text(
+                                                  'Service (${_getServiceChargePercent().toStringAsFixed(1)}%):'),
+                                              Text(
+                                                  '+RM${serviceChargeAmount.toStringAsFixed(2)}'),
+                                            ],
+                                          ),
+                                        if (taxAmount > 0)
+                                          TableRow(
+                                            children: [
+                                              Text(
+                                                  'Tax (${_getTaxPercent().toStringAsFixed(1)}%):'),
+                                              Text(
+                                                  '+RM${taxAmount.toStringAsFixed(2)}'),
+                                            ],
+                                          ),
+                                        TableRow(
+                                          children: [
+                                            const Text('Final Total:',
+                                                style: TextStyle(
+                                                    fontWeight:
+                                                        FontWeight.bold)),
+                                            Text(
+                                                'RM${finalTotal.toStringAsFixed(2)}',
+                                                style: const TextStyle(
+                                                    fontWeight:
+                                                        FontWeight.bold)),
+                                          ],
+                                        ),
+                                      ],
                                     ),
-                                    onChanged: (value) =>
-                                        _updateOrderItem(index, 'name', value),
-                                  )
-                                : Text(item.name),
+                                  ],
+                                ),
+                                actions: [
+                                  TextButton(
+                                    onPressed: () =>
+                                        Navigator.of(context).pop(),
+                                    child: const Text("Close"),
+                                  ),
+                                ],
+                              );
+                            },
+                          );
+                        }
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(vertical: 8),
+                        decoration: BoxDecoration(
+                          border: Border(
+                            bottom: BorderSide(
+                                color: Colors.grey.shade300, width: 1),
                           ),
-                          const SizedBox(width: 8),
-                          SizedBox(
-                            width: 80,
-                            child: _isEditing
-                                ? TextFormField(
-                                    initialValue: item.price.toString(),
-                                    decoration: InputDecoration(
-                                      isDense: true,
-                                      contentPadding:
-                                          const EdgeInsets.symmetric(
-                                              vertical: 8),
-                                      prefixText: 'RM',
-                                      border: OutlineInputBorder(
-                                        borderRadius: BorderRadius.circular(8),
-                                      ),
+                        ),
+                        child: Column(
+                          children: [
+                            Row(
+                              children: [
+                                Expanded(
+                                  flex: 3,
+                                  child: _isEditing
+                                      ? TextFormField(
+                                          initialValue: item.name,
+                                          decoration: InputDecoration(
+                                            isDense: true,
+                                            contentPadding:
+                                                const EdgeInsets.symmetric(
+                                                    vertical: 8),
+                                            hintText: 'Item name',
+                                            border: OutlineInputBorder(
+                                              borderRadius:
+                                                  BorderRadius.circular(8),
+                                            ),
+                                          ),
+                                          onChanged: (value) =>
+                                              _updateOrderItem(
+                                                  index, 'name', value),
+                                        )
+                                      : Text(
+                                          item.name,
+                                          style: const TextStyle(
+                                              fontWeight: FontWeight.bold),
+                                        ),
+                                ),
+                                const SizedBox(width: 8),
+                                SizedBox(
+                                  width: 80,
+                                  child: _isEditing
+                                      ? TextFormField(
+                                          initialValue: item.price.toString(),
+                                          decoration: InputDecoration(
+                                            isDense: true,
+                                            contentPadding:
+                                                const EdgeInsets.symmetric(
+                                                    vertical: 8),
+                                            prefixText: 'RM',
+                                            border: OutlineInputBorder(
+                                              borderRadius:
+                                                  BorderRadius.circular(8),
+                                            ),
+                                          ),
+                                          keyboardType: TextInputType.number,
+                                          onChanged: (value) =>
+                                              _updateOrderItem(
+                                                  index, 'price', value),
+                                        )
+                                      : Text(
+                                          'RM${item.price.toStringAsFixed(2)}'),
+                                ),
+                                const SizedBox(width: 8),
+                                SizedBox(
+                                  width: 60,
+                                  child: _isEditing
+                                      ? TextFormField(
+                                          initialValue:
+                                              item.quantity.toString(),
+                                          decoration: InputDecoration(
+                                            isDense: true,
+                                            contentPadding:
+                                                const EdgeInsets.symmetric(
+                                                    vertical: 8),
+                                            border: OutlineInputBorder(
+                                              borderRadius:
+                                                  BorderRadius.circular(8),
+                                            ),
+                                          ),
+                                          keyboardType: TextInputType.number,
+                                          onChanged: (value) =>
+                                              _updateOrderItem(
+                                                  index, 'quantity', value),
+                                        )
+                                      : Text(item.quantity.toString()),
+                                ),
+                                // Display the final price after discounts/taxes
+                                Expanded(
+                                  child: Text(
+                                    'RM${finalTotal.toStringAsFixed(2)}',
+                                    textAlign: TextAlign.center,
+                                    style: TextStyle(
+                                      color: finalTotal < originalTotal
+                                          ? Colors.red
+                                          : Colors.green,
+                                      fontWeight: FontWeight.bold,
                                     ),
-                                    keyboardType: TextInputType.number,
-                                    onChanged: (value) =>
-                                        _updateOrderItem(index, 'price', value),
-                                  )
-                                : Text('RM${item.price.toStringAsFixed(2)}'),
-                          ),
-                          const SizedBox(width: 8),
-                          SizedBox(
-                            width: 60,
-                            child: _isEditing
-                                ? TextFormField(
-                                    initialValue: item.quantity.toString(),
-                                    decoration: InputDecoration(
-                                      isDense: true,
-                                      contentPadding:
-                                          const EdgeInsets.symmetric(
-                                              vertical: 8),
-                                      border: OutlineInputBorder(
-                                        borderRadius: BorderRadius.circular(8),
-                                      ),
-                                    ),
-                                    keyboardType: TextInputType.number,
-                                    onChanged: (value) => _updateOrderItem(
-                                        index, 'quantity', value),
-                                  )
-                                : Text(item.quantity.toString()),
-                          ),
-                          if (_isEditing)
-                            IconButton(
-                              icon: const Icon(Icons.delete, color: Colors.red),
-                              onPressed: () => _deleteOrderItem(index),
-                              padding: EdgeInsets.zero,
-                              constraints: const BoxConstraints(),
+                                  ),
+                                ),
+                              ],
                             ),
-                        ],
+                            // Show calculation information if there's a difference between original and final
+                            if (finalTotal != originalTotal && !_isEditing)
+                              Padding(
+                                padding: const EdgeInsets.only(top: 4.0),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.end,
+                                  children: [
+                                    if (discountedPrice != originalTotal)
+                                      Text(
+                                        'Discount: -RM${(originalTotal - discountedPrice).toStringAsFixed(2)} (${_getDiscountPercent().toStringAsFixed(1)}%)',
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          color: Colors.red,
+                                          fontStyle: FontStyle.italic,
+                                        ),
+                                      ),
+                                    Row(
+                                      mainAxisAlignment: MainAxisAlignment.end,
+                                      children: [
+                                        Expanded(
+                                          child: Text(
+                                            'Final: RM${finalTotal.toStringAsFixed(2)}',
+                                            style: TextStyle(
+                                              fontSize: 12,
+                                              color: Colors.grey[600],
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                            overflow: TextOverflow.ellipsis,
+                                            textAlign: TextAlign.end,
+                                          ),
+                                        ),
+                                        const SizedBox(width: 4),
+                                        Icon(
+                                          Icons.info_outline,
+                                          size: 14,
+                                          color: Colors.grey[600],
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                              ),
+                          ],
+                        ),
                       ),
                     );
                   },
@@ -412,11 +736,17 @@ class _EditableCombinedResultCardViewState
             ),
           ),
 
+          // Discount and Tax Information
+          _buildDiscountAndTaxInfo(),
+
           // Done Button
           Padding(
             padding: const EdgeInsets.all(16),
             child: ElevatedButton(
               onPressed: () {
+                // Force one final update before sending data to parent
+                _forceUpdateTotals();
+
                 widget.onDone(
                   _orderItems,
                   _subtotalController.text,
@@ -435,5 +765,118 @@ class _EditableCombinedResultCardViewState
         ],
       ),
     );
+  }
+
+  Widget _buildDiscountAndTaxInfo() {
+    return Column(
+      children: [
+        if (widget.discountInfo.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(top: 4.0),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Expanded(
+                  child: Text(
+                    'Discount ${_getDiscountPercent().toStringAsFixed(1)}%: -RM${(_calculateSubtotal() * _getDiscountPercent() / 100).toStringAsFixed(2)}',
+                    style: const TextStyle(
+                      color: Colors.red,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        if (widget.serviceChargeInfo.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(top: 4.0),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  widget.serviceChargeInfo,
+                  style: TextStyle(
+                    color: Colors.grey[700],
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        if (widget.taxInfo.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(top: 4.0),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  widget.taxInfo,
+                  style: const TextStyle(
+                    color: Colors.blue,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
+          ),
+      ],
+    );
+  }
+
+  // Helper method to calculate subtotal
+  double _calculateSubtotal() {
+    return _orderItems.fold(
+        0.0, (sum, item) => sum + (item.price * item.quantity));
+  }
+
+  // Add helper method to extract discount percentage
+  double _getDiscountPercent() {
+    if (widget.discountInfo.isEmpty) return 0.0;
+    if (!widget.discountInfo.contains('%')) return 0.0;
+
+    try {
+      // Extract the percentage value from the discount info string
+      final percentMatch =
+          RegExp(r'(\d+\.?\d*)%').firstMatch(widget.discountInfo);
+      if (percentMatch != null) {
+        return double.tryParse(percentMatch.group(1) ?? '0') ?? 0.0;
+      }
+      return 0.0;
+    } catch (e) {
+      return 0.0;
+    }
+  }
+
+  // Add helper methods for tax and service charge if needed
+  double _getTaxPercent() {
+    if (widget.taxInfo.isEmpty) return 0.0;
+    if (!widget.taxInfo.contains('%')) return 0.0;
+
+    try {
+      final percentMatch = RegExp(r'(\d+\.?\d*)%').firstMatch(widget.taxInfo);
+      if (percentMatch != null) {
+        return double.tryParse(percentMatch.group(1) ?? '0') ?? 0.0;
+      }
+      return 0.0;
+    } catch (e) {
+      return 0.0;
+    }
+  }
+
+  double _getServiceChargePercent() {
+    if (widget.serviceChargeInfo.isEmpty) return 0.0;
+    if (!widget.serviceChargeInfo.contains('%')) return 0.0;
+
+    try {
+      final percentMatch =
+          RegExp(r'(\d+\.?\d*)%').firstMatch(widget.serviceChargeInfo);
+      if (percentMatch != null) {
+        return double.tryParse(percentMatch.group(1) ?? '0') ?? 0.0;
+      }
+      return 0.0;
+    } catch (e) {
+      return 0.0;
+    }
   }
 }

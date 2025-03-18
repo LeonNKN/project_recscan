@@ -5,11 +5,13 @@ class OrderItem {
   final String name;
   final double price;
   final int quantity;
+  final double? originalPrice; // Original price before discounts or taxes
 
   OrderItem({
     required this.name,
     required this.price,
     required this.quantity,
+    this.originalPrice,
   });
 
   double get total => price * quantity;
