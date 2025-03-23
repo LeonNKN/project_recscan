@@ -171,8 +171,19 @@ class _ScanPageState extends State<ScanPage> {
       final Map<String, dynamic> payload = {
         'text': text,
         'ollama_config': {
-          'model': 'llava:latest',
+          'model': 'bakllava-receipt',
           'temperature': 0.1,
+          'top_p': 0.9,
+          'top_k': 40,
+          'num_ctx': 768,
+          'gpu_layers': 35,
+          'num_gpu': 1,
+          'num_thread': 8,
+          'num_predict': 768,
+          'f16': true,
+          'mmap': true,
+          'batch_size': 1,
+          'repeat_penalty': 1.1
         }
       };
 

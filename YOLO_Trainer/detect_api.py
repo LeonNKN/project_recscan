@@ -18,6 +18,10 @@ import requests  # For API calls
 import base64  # For image encoding
 import ngrok
 import ollama  # For local model integration
+import cv2
+import numpy as np
+from io import BytesIO
+from PIL import Image
 
 # Load environment variables
 load_dotenv()
@@ -291,6 +295,49 @@ class ReceiptRequest(BaseModel):
     image: str = None  # Optional base64-encoded image
     ollama_config: dict = None  # Optional Ollama model configuration
 
+def resize_base64_image(base64_string, target_size=(512, 512)):
+    """Resize a base64 encoded image to the target size to reduce VRAM usage"""
+    try:
+        # Decode base64 string
+        img_data = base64.b64decode(base64_string)
+        
+        # Convert to numpy array
+        img_array = np.frombuffer(img_data, np.uint8)
+        
+        # Decode image
+        img = cv2.imdecode(img_array, cv2.IMREAD_COLOR)
+        if img is None:
+            logger.error("Failed to decode image")
+            return base64_string
+            
+        # Get original dimensions
+        height, width = img.shape[:2]
+        logger.info(f"Original image size: {width}x{height}")
+        
+        # Resize image while maintaining aspect ratio
+        if height > target_size[1] or width > target_size[0]:
+            # Calculate ratio
+            ratio = min(target_size[0] / width, target_size[1] / height)
+            new_width = int(width * ratio)
+            new_height = int(height * ratio)
+            
+            # Resize image
+            img_resized = cv2.resize(img, (new_width, new_height), interpolation=cv2.INTER_AREA)
+            logger.info(f"Resized image to: {new_width}x{new_height}")
+            
+            # Encode to base64
+            _, buffer = cv2.imencode('.jpg', img_resized, [cv2.IMWRITE_JPEG_QUALITY, 90])
+            resized_base64 = base64.b64encode(buffer).decode('utf-8')
+            
+            logger.info(f"Resized image from {len(base64_string)} bytes to {len(resized_base64)} bytes")
+            return resized_base64
+        else:
+            logger.info("Image already smaller than target size, not resizing")
+            return base64_string
+    except Exception as e:
+        logger.error(f"Error resizing image: {e}")
+        return base64_string
+
 def process_with_ollama(text=None, image_base64=None, max_retries=2):
     """Process receipt text and image with Ollama"""
     if not OLLAMA_AVAILABLE:
@@ -301,65 +348,103 @@ def process_with_ollama(text=None, image_base64=None, max_retries=2):
         logger.warning("No text or image provided for Ollama processing")
         return None
     
-    # Prepare the prompt for receipt extraction
-    prompt = """Analyze this receipt image and extract the following information in JSON format:
-- merchant_name: The business name
-- date: The date of purchase (YYYY-MM-DD format if possible)
-- items: An array of items purchased, each with:
-  - name: Clear product name (not just numbers)
-  - quantity: Numeric quantity (as an integer)
-  - unit_price: Individual price (as a float)
-- total_amount: The total amount paid
+    # Resize image if provided to reduce VRAM usage
+    if image_base64:
+        # Force smaller image size for Mistral-based BakLLaVA optimization
+        target_size = (int(os.getenv('IMAGE_SIZE', '224')), int(os.getenv('IMAGE_SIZE', '224')))
+        logger.info(f"Resizing image to maximum dimensions: {target_size[0]}x{target_size[1]} for extreme VRAM optimization")
+        image_base64 = resize_base64_image(image_base64, target_size)
+    
+    # Specialized system prompt for receipt analysis - optimized for BakLLaVA/Mistral
+    system_prompt = """You are an expert receipt analyzer. Extract only the following fields in clean JSON:
+merchant_name: Store name from receipt header
+date: Date in YYYY-MM-DD format
+items: Array with name (descriptive), quantity (integer), unit_price (decimal)
+total_amount: Final amount paid
 
-Format your response as valid JSON with EXACTLY the field names shown above. The Flutter app requires 'unit_price' NOT 'price' for items. The app expects:
-{
+Return ONLY valid JSON - no explanations or markdown."""
+    
+    # Simplified prompt for BakLLaVA to reduce token usage
+    prompt = f"""Analyze this receipt and extract the following JSON structure:
+{{
   "merchant_name": "Store Name",
-  "date": "2023-10-15",
-  "items": [
-    {
-      "name": "Product name",
-      "quantity": 1,
-      "unit_price": 10.99
-    }
-  ],
+  "date": "YYYY-MM-DD",
+  "items": [{{ "name": "Product", "quantity": 1, "unit_price": 10.99 }}],
   "total_amount": 10.99
-}
+}}
 
-Return ONLY valid JSON without any explanation text. Ensure all item names are descriptive, not just numbers."""
-
-    # Use image if provided, otherwise just use text
-    data = {
+Guidelines:
+- Extract store name from the top
+- Convert all dates to YYYY-MM-DD
+- Include all items with descriptive names
+- Find total at the bottom after taxes
+- Return ONLY JSON, nothing else"""
+    
+    # Calculate number of tokens to reserve for generating response
+    max_tokens = int(os.getenv('MAX_TOKENS', '768'))
+    
+    # Advanced options for GPU optimization - use environment variable for GPU layers
+    gpu_options = {}
+    if os.environ.get("ENABLE_GPU", "false").lower() == "true" and system_info.get("gpu_available"):
+        # Try to get the environment variable OLLAMA_NUM_GPU_LAYERS first for maximum compatibility
+        gpu_layers = int(os.environ.get("OLLAMA_NUM_GPU_LAYERS", os.environ.get("GPU_LAYERS", "35")))
+        num_gpu = int(os.environ.get("NUM_GPU", "1"))
+        num_thread = int(os.environ.get("NUM_THREAD", "8"))
+        
+        gpu_options = {
+            "gpu_layers": gpu_layers,
+            "num_gpu": num_gpu,
+            "num_thread": num_thread,
+            "mmap": True,     # Memory mapping for efficiency
+            "f16": True,      # Use half-precision for GPU calculations
+            "batch_size": int(os.getenv('BATCH_SIZE', '1'))
+        }
+        
+        logger.info(f"Using extremely optimized GPU settings for BakLLaVA on RTX 3070 Ti: layers={gpu_layers}, threads={num_thread}")
+        
+        # Set CUDA device if specified
+        cuda_device = os.environ.get("CUDA_VISIBLE_DEVICES")
+        if cuda_device:
+            os.environ["CUDA_VISIBLE_DEVICES"] = cuda_device
+            logger.info(f"Set CUDA_VISIBLE_DEVICES to {cuda_device}")
+    
+    # Optimize model parameters for receipt analysis with BakLLaVA
+    model_params = {
         "model": OLLAMA_MODEL,
+        "system": system_prompt,
         "prompt": prompt,
-        "stream": False
+        "stream": False,
+        "temperature": 0.1,    # Lower temperature for more deterministic outputs
+        "top_p": 0.9,          # Slightly lower top_p for more focused sampling
+        "top_k": 40,           # Standard top_k value
+        "num_ctx": 768,        # Reduced context window to optimize VRAM usage
+        "num_predict": max_tokens,
+        "repeat_penalty": 1.1, # Avoid repetition in outputs
+        "stop": ["<|im_end|>"] # BakLLaVA/Mistral-specific stop token
     }
     
     # Add the image if provided
     if image_base64:
         try:
-            # Convert base64 string to image for Ollama
-            image_data = base64.b64decode(image_base64)
-            data["images"] = [image_base64]
-            logger.info(f"Including image in Ollama request (size: {len(image_data)} bytes)")
+            # Add image to request
+            model_params["images"] = [image_base64]
+            logger.info(f"Including optimized image in Ollama request")
         except Exception as e:
             logger.error(f"Error processing image for Ollama: {str(e)}")
     
     # Add the text if provided
     if text:
-        if "prompt" in data:
-            data["prompt"] += f"\n\nOCR Text from receipt:\n{text[:1000]}"
-        else:
-            data["prompt"] = f"OCR Text from receipt:\n{text[:1000]}"
-    
-    # Configure GPU usage if available
-    options = {}
-    if os.environ.get("ENABLE_GPU", "false").lower() == "true" and system_info.get("gpu_available"):
-        options = {"num_gpu": 1}
-        logger.info("Using GPU for Ollama processing")
+        # Truncate text to avoid exceeding context length
+        text_limit = 700  # Limit text to preserve context window
+        model_params["prompt"] += f"\n\nOCR Text from receipt:\n{text[:text_limit]}"
+        if len(text) > text_limit:
+            logger.info(f"Truncated OCR text from {len(text)} to {text_limit} characters to preserve context window")
     
     # Retry logic for Ollama API calls
     result = None
     retry_count = 0
+    
+    logger.info(f"Calling GPU-optimized BakLLaVA for receipt processing with model: {OLLAMA_MODEL}")
     
     while retry_count <= max_retries:
         try:
@@ -368,19 +453,19 @@ Return ONLY valid JSON without any explanation text. Ensure all item names are d
             start_time = time.time()
             
             try:
-                response = ollama.generate(**data, options=options)
+                response = ollama.generate(**model_params, options=gpu_options)
                 # Log the time taken
                 elapsed = time.time() - start_time
-                logger.info(f"Ollama response received in {elapsed:.2f}s")
+                logger.info(f"✅ Ollama response received in {elapsed:.2f}s")
             except Exception as e:
                 if "model not found" in str(e).lower():
-                    # If model not found in expected format, try simpler model name
+                    # Try with the base model (no tags)
                     model_name_simple = OLLAMA_MODEL.split(':')[0] if ':' in OLLAMA_MODEL else OLLAMA_MODEL
                     logger.warning(f"Model '{OLLAMA_MODEL}' not found, trying with '{model_name_simple}'")
-                    data["model"] = model_name_simple
-                    response = ollama.generate(**data, options=options)
+                    model_params["model"] = model_name_simple
+                    response = ollama.generate(**model_params, options=gpu_options)
                     elapsed = time.time() - start_time
-                    logger.info(f"Ollama response with '{model_name_simple}' received in {elapsed:.2f}s")
+                    logger.info(f"✅ Ollama response with '{model_name_simple}' received in {elapsed:.2f}s")
                 else:
                     raise
             
@@ -418,7 +503,7 @@ Return ONLY valid JSON without any explanation text. Ensure all item names are d
                         logger.info("Using full response as JSON")
                 
                 # Parse the extracted JSON
-                logger.debug(f"Attempting to parse JSON: {json_text[:200]}...")
+                logger.info(f"Attempting to parse JSON response")
                 parsed = json.loads(json_text)
                 
                 # Normalize field names (handle potential inconsistencies)
@@ -464,7 +549,7 @@ Return ONLY valid JSON without any explanation text. Ensure all item names are d
                     for item in parsed[items_key]:
                         # Skip items without a name or with numeric-only names
                         item_name = item.get("name", "")
-                        if not item_name or (item_name.replace(".", "").isdigit()):
+                        if not item_name or (isinstance(item_name, str) and item_name.replace(".", "").isdigit()):
                             continue
                         
                         # Process the item
@@ -527,7 +612,7 @@ Return ONLY valid JSON without any explanation text. Ensure all item names are d
                     normalized["detected_language"] = "en"
                 
                 # Log the extracted data
-                logger.info(f"Successfully extracted receipt data with {len(normalized['items'])} items")
+                logger.info(f"✅ Successfully extracted receipt data with {len(normalized['items'])} items")
                 result = normalized
                 break  # Success, exit the retry loop
                 
@@ -545,6 +630,15 @@ Return ONLY valid JSON without any explanation text. Ensure all item names are d
             elif "connection refused" in str(e).lower():
                 logger.error("Cannot connect to Ollama service. Make sure it's running.")
                 logger.error("Run 'ollama serve' in a terminal")
+            elif "CUDA" in str(e).upper() or "GPU" in str(e).upper():
+                logger.error("GPU error detected. Trying with fewer GPU layers...")
+                # Reduce GPU layers and try again
+                if "gpu_layers" in gpu_options and gpu_options["gpu_layers"] > 10:
+                    gpu_options["gpu_layers"] = max(10, gpu_options["gpu_layers"] - 10)
+                    logger.info(f"Reduced GPU layers to {gpu_options['gpu_layers']}")
+                    retry_count += 1
+                    continue
+                
             retry_count += 1
             time.sleep(1)  # Small delay before retry
     
